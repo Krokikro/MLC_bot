@@ -4,7 +4,11 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from openai import APIConnectionError
 from openai import OpenAI
+from openai import AuthenticationError
+from openai import OpenAIError
+from openai import RateLimitError
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -173,9 +177,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user_name = users.get(user_id, {}).get("name", "")
         try:
             reply = generate_ai_reply(user_name, text)
-        except Exception:
+        except AuthenticationError:
             await update.message.reply_text(
-                "I could not reach OpenAI right now. Try again in a moment."
+                "OpenAI authentication failed. Check OPENAI_API_KEY in Railway Variables."
+            )
+            return
+        except RateLimitError:
+            await update.message.reply_text(
+                "OpenAI is unavailable for this bot right now because the API quota is exhausted or billing is not active."
+            )
+            return
+        except APIConnectionError:
+            await update.message.reply_text(
+                "I could not connect to OpenAI right now. Try again in a moment."
+            )
+            return
+        except OpenAIError:
+            await update.message.reply_text(
+                "OpenAI returned an error. Check the model name and account status."
             )
             return
 
