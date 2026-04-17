@@ -26,6 +26,15 @@ HISTORY_LIMIT = 12
 PRESENTATION_TRIGGERS = {"presentation", "flystat", "cgm", "product", "sensor"}
 MARKETING_TRIGGERS = {"marketing", "earn", "earning", "income", "business", "investment"}
 REGISTER_TRIGGERS = {"register", "registration", "sign up", "signup", "join", "website"}
+GREETING_WORDS = {
+    "hi",
+    "hello",
+    "hey",
+    "good morning",
+    "good afternoon",
+    "good evening",
+    "yo",
+}
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -46,6 +55,7 @@ Style:
 Behavior:
 - Answer questions helpfully even if you do not know the exact answer
 - If a detail is uncertain, say what you do know and be honest about the uncertainty
+- Never invent exact dates, launch timelines, statistics, medical claims, or compensation details
 - Do not say you are just a bot or refuse normal conversation unless absolutely necessary
 - Softly guide interested users toward the presentation, marketing plan, or registration link when relevant
 
@@ -100,6 +110,34 @@ def ensure_user(user_id: str) -> dict:
 def has_trigger(text: str, phrases: set[str]) -> bool:
     normalized = normalize_text(text)
     return any(phrase in normalized for phrase in phrases)
+
+
+def looks_like_name(text: str) -> bool:
+    cleaned = text.strip()
+    normalized = normalize_text(cleaned)
+
+    if not cleaned or "?" in cleaned:
+        return False
+
+    if normalized in GREETING_WORDS:
+        return False
+
+    words = [word for word in cleaned.replace(".", " ").split() if word]
+    if len(words) == 0 or len(words) > 3:
+        return False
+
+    for word in words:
+        if not word.replace("-", "").isalpha():
+            return False
+
+    return True
+
+
+def update_history(user: dict, user_text: str, assistant_text: str) -> None:
+    history = user.get("history", [])
+    history.append({"role": "user", "content": user_text})
+    history.append({"role": "assistant", "content": assistant_text})
+    user["history"] = history[-(HISTORY_LIMIT * 2) :]
 
 
 async def send_file(update: Update, path: Path, caption: str) -> None:
@@ -176,13 +214,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     step = user.get("step", "ask_name")
 
     if step == "ask_name":
-        user["name"] = text
+        if looks_like_name(text):
+            user["name"] = text
+            user["step"] = "chat"
+            save_data(users)
+            await update.message.reply_text(
+                f"Nice to meet you, {text}.\n\nWhat would you like to know about Flystat or the MLC project?"
+            )
+            return
+
         user["step"] = "chat"
         save_data(users)
-        await update.message.reply_text(
-            f"Nice to meet you, {text}.\n\nWhat brought you here today?"
-        )
-        return
 
     if has_trigger(text, PRESENTATION_TRIGGERS):
         await send_file(update, FLYSTAT_FILE, "Flystat presentation")
@@ -230,9 +272,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    history.append({"role": "user", "content": text})
-    history.append({"role": "assistant", "content": reply})
-    user["history"] = history[-(HISTORY_LIMIT * 2) :]
+    update_history(user, text, reply)
     user["step"] = "chat"
     save_data(users)
 
