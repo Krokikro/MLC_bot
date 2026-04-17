@@ -22,14 +22,48 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_FILE = BASE_DIR / "data.json"
 FLYSTAT_FILE = BASE_DIR / "flystat.pdf"
 MARKETING_FILE = BASE_DIR / "marketing.pdf"
-YES_ANSWERS = {"yes", "y", "yeah", "yep", "sure", "ok", "okay"}
-NO_ANSWERS = {"no", "n", "nope", "not now"}
+HISTORY_LIMIT = 12
+PRESENTATION_TRIGGERS = {"presentation", "flystat", "cgm", "product", "sensor"}
+MARKETING_TRIGGERS = {"marketing", "earn", "earning", "income", "business", "investment"}
+REGISTER_TRIGGERS = {"register", "registration", "sign up", "signup", "join", "website"}
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+SYSTEM_PROMPT = """
+You are a friendly, human-like English-speaking assistant inside a Telegram bot for MLC and CGM Flystat.
+
+Style:
+- Sound natural, warm, and conversational
+- Never sound robotic, scripted, or overly formal
+- Keep answers clear and useful
+- Use the user's name naturally when it helps
+- Write in American English only
+
+Behavior:
+- Answer questions helpfully even if you do not know the exact answer
+- If a detail is uncertain, say what you do know and be honest about the uncertainty
+- Do not say you are just a bot or refuse normal conversation unless absolutely necessary
+- Softly guide interested users toward the presentation, marketing plan, or registration link when relevant
+
+Project context:
+- CGM Flystat is a continuous glucose monitoring system
+- It works in real time and helps users monitor glucose changes
+- It is designed to be convenient and easy to use
+
+Business context:
+- MLC includes a partner and referral model
+- Users may be interested in product information, business opportunities, and registration
+
+Useful resources:
+- Presentation is available on request
+- Marketing plan is available on request
+- Registration link: https://mlc.health
+- English channel: https://t.me/MLC_health_channel_en
+""".strip()
 
 
 def load_data() -> dict:
@@ -50,8 +84,22 @@ def save_data(data: dict) -> None:
         json.dump(data, file, ensure_ascii=False, indent=2)
 
 
-def normalize_answer(text: str) -> str:
+def normalize_text(text: str) -> str:
     return text.strip().lower()
+
+
+def ensure_user(user_id: str) -> dict:
+    if user_id not in users:
+        users[user_id] = {"step": "ask_name", "history": []}
+
+    users[user_id].setdefault("history", [])
+    users[user_id].setdefault("step", "ask_name")
+    return users[user_id]
+
+
+def has_trigger(text: str, phrases: set[str]) -> bool:
+    normalized = normalize_text(text)
+    return any(phrase in normalized for phrase in phrases)
 
 
 async def send_file(update: Update, path: Path, caption: str) -> None:
@@ -63,28 +111,32 @@ async def send_file(update: Update, path: Path, caption: str) -> None:
         await update.message.reply_document(document=file, caption=caption)
 
 
-def generate_ai_reply(user_name: str, message_text: str) -> str:
+def generate_ai_reply(user_name: str, history: list[dict], message_text: str) -> str:
     if not openai_client:
         return (
             "AI replies are not configured yet. Add OPENAI_API_KEY and try again."
         )
 
-    response = openai_client.responses.create(
-        model=OPENAI_MODEL,
-        instructions=(
-            "You are an assistant for MLC and CGM Flystat prospects. "
-            "Answer clearly, briefly, and helpfully. "
-            "If you are unsure about business-specific facts, say so instead of inventing details."
-        ),
-        input=[
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if user_name:
+        messages.append(
             {
-                "role": "user",
-                "content": f"User name: {user_name or 'Unknown'}\nQuestion: {message_text}",
+                "role": "system",
+                "content": f"The user's name is {user_name}. Use it naturally when helpful.",
             }
-        ],
-        max_output_tokens=250,
+        )
+
+    messages.extend(history[-HISTORY_LIMIT:])
+    messages.append({"role": "user", "content": message_text})
+
+    response = openai_client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=messages,
+        temperature=0.9,
+        max_tokens=300,
     )
-    return response.output_text.strip() or "I could not generate a reply."
+    reply = response.choices[0].message.content or "I could not generate a reply."
+    return reply.strip()
 
 
 users = load_data()
@@ -92,14 +144,15 @@ users = load_data()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.effective_user.id)
-    name = users.get(user_id, {}).get("name")
-
-    users[user_id] = {"step": "ask_name"}
+    user = ensure_user(user_id)
+    name = user.get("name")
+    user["step"] = "ask_name"
+    user["history"] = []
     save_data(users)
 
     if name:
         await update.message.reply_text(
-            f"Welcome back, {name}.\nLet’s continue from the start. What’s your name?"
+            f"Welcome back, {name}.\nLet’s start fresh. What’s your name?"
         )
         return
 
@@ -108,7 +161,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.effective_user.id)
-    users[user_id] = {"step": "ask_name"}
+    users[user_id] = {"step": "ask_name", "history": []}
     save_data(users)
     await update.message.reply_text("State cleared. What’s your name?")
 
@@ -119,89 +172,71 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
-    answer = normalize_answer(text)
-
-    if user_id not in users:
-        users[user_id] = {"step": "ask_name"}
-
-    step = users[user_id].get("step", "ask_name")
+    user = ensure_user(user_id)
+    step = user.get("step", "ask_name")
 
     if step == "ask_name":
-        users[user_id]["name"] = text
-        users[user_id]["step"] = "offer"
+        user["name"] = text
+        user["step"] = "chat"
         save_data(users)
         await update.message.reply_text(
-            f"Nice to meet you, {text}.\n\nDo you want to learn about CGM Flystat? Reply yes or no."
+            f"Nice to meet you, {text}.\n\nWhat brought you here today?"
         )
         return
 
-    if step == "offer":
-        if answer in YES_ANSWERS:
-            users[user_id]["step"] = "investment"
-            save_data(users)
-            await send_file(update, FLYSTAT_FILE, "Flystat presentation")
-            await update.message.reply_text(
-                "Here is the presentation.\nDo you want to learn about earning opportunities? Reply yes or no."
-            )
-            return
-
-        if answer in NO_ANSWERS:
-            users[user_id]["step"] = "offer"
-            save_data(users)
-            await update.message.reply_text("No problem. If you change your mind, reply yes.")
-            return
-
-        await update.message.reply_text("Please reply with yes or no.")
+    if has_trigger(text, PRESENTATION_TRIGGERS):
+        await send_file(update, FLYSTAT_FILE, "Flystat presentation")
+        await update.message.reply_text(
+            "Here’s the presentation. If you want, I can also explain the product in simple words."
+        )
         return
 
-    if step == "investment":
-        if answer in YES_ANSWERS:
-            users[user_id]["step"] = "completed"
-            save_data(users)
-            await send_file(update, MARKETING_FILE, "Marketing plan")
-            await update.message.reply_text(
-                "Register here: https://mlc.health\n\nJoin channel: https://t.me/MLC_health_channel_en\n\nYou can now ask me questions about MLC and CGM Flystat."
-            )
-            return
-
-        if answer in NO_ANSWERS:
-            users[user_id]["step"] = "completed"
-            save_data(users)
-            await update.message.reply_text("Okay. You can ask me anytime.")
-            return
-
-        await update.message.reply_text("Please reply with yes or no.")
+    if has_trigger(text, MARKETING_TRIGGERS):
+        await send_file(update, MARKETING_FILE, "Marketing plan")
+        await update.message.reply_text(
+            "Here’s the marketing plan. If you want, I can also walk you through the business side in plain English."
+        )
         return
 
-    if step == "completed":
-        user_name = users.get(user_id, {}).get("name", "")
-        try:
-            reply = generate_ai_reply(user_name, text)
-        except AuthenticationError:
-            await update.message.reply_text(
-                "OpenAI authentication failed. Check OPENAI_API_KEY in Railway Variables."
-            )
-            return
-        except RateLimitError:
-            await update.message.reply_text(
-                "OpenAI is unavailable for this bot right now because the API quota is exhausted or billing is not active."
-            )
-            return
-        except APIConnectionError:
-            await update.message.reply_text(
-                "I could not connect to OpenAI right now. Try again in a moment."
-            )
-            return
-        except OpenAIError:
-            await update.message.reply_text(
-                "OpenAI returned an error. Check the model name and account status."
-            )
-            return
-
-        await update.message.reply_text(reply)
+    if has_trigger(text, REGISTER_TRIGGERS):
+        await update.message.reply_text(
+            "You can register here: https://mlc.health\n\nAnd if you want updates in English, here’s the channel: https://t.me/MLC_health_channel_en"
+        )
         return
 
-    await update.message.reply_text("Use /start to begin again or /reset to clear the current flow.")
+    user_name = user.get("name", "")
+    history = user.get("history", [])
+
+    try:
+        reply = generate_ai_reply(user_name, history, text)
+    except AuthenticationError:
+        await update.message.reply_text(
+            "OpenAI authentication failed. Check OPENAI_API_KEY in Railway Variables."
+        )
+        return
+    except RateLimitError:
+        await update.message.reply_text(
+            "OpenAI is unavailable for this bot right now because the API quota is exhausted or billing is not active."
+        )
+        return
+    except APIConnectionError:
+        await update.message.reply_text(
+            "I could not connect to OpenAI right now. Try again in a moment."
+        )
+        return
+    except OpenAIError:
+        await update.message.reply_text(
+            "OpenAI returned an error. Check the model name and account status."
+        )
+        return
+
+    history.append({"role": "user", "content": text})
+    history.append({"role": "assistant", "content": reply})
+    user["history"] = history[-(HISTORY_LIMIT * 2) :]
+    user["step"] = "chat"
+    save_data(users)
+
+    await update.message.reply_text(reply)
 
 
 def main() -> None:
