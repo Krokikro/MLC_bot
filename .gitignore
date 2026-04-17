@@ -1,0 +1,8 @@
+.env
+data.json
+__pycache__/
+.pytest_cache/
+.DS_Store
+.idea/
+.venv/
+token.env/
