@@ -35,9 +35,9 @@ from knowledge import select_relevant_context
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_FILE = BASE_DIR / "data.json"
-VIDEO_FILE = BASE_DIR / "MLC_video.mp4"
 FLYSTAT_FILE = BASE_DIR / "flystat.pdf"
 MARKETING_FILE = BASE_DIR / "marketing.pdf"
+VIDEO_LINK = "https://www.youtube.com/watch?v=mYzSyPbhhlU"
 HISTORY_LIMIT = 12
 PRESENTATION_TRIGGERS = {"presentation", "product pdf", "flystat pdf", "brochure", "catalog"}
 MARKETING_TRIGGERS = {"marketing plan", "plan pdf", "comp plan", "compensation plan"}
@@ -326,15 +326,6 @@ async def send_file(update: Update, path: Path, caption: str) -> None:
         await update.message.reply_document(document=file, caption=caption)
 
 
-async def send_video(update: Update, path: Path, caption: str) -> None:
-    if not path.exists():
-        await update.message.reply_text(f"File not found: {path.name}")
-        return
-
-    with path.open("rb") as file:
-        await update.message.reply_video(video=file, caption=caption)
-
-
 def mark_sent(user: dict, item: str) -> None:
     sent = user.setdefault("sent_items", {})
     sent[item] = True
@@ -504,12 +495,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 f"Nice to meet you, {extracted_name}."
             )
             await update.message.reply_text(
-                "Take a quick look at this short video about the MLC project."
-            )
-            await send_video(
-                update,
-                VIDEO_FILE,
-                "MLC project video",
+                f"Take a quick look at this short video about the MLC project:\n{VIDEO_LINK}"
             )
             await update.message.reply_text(
                 "What would be more interesting to you right now: the product or the investment side of the project?"
