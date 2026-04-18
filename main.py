@@ -42,8 +42,40 @@ TECH_EMAIL = "company@mlc.health"
 PARTNERS_EMAIL = "partners@mlc.health"
 CONTACT_FORM = "https://flystat.com/ru/contacts"
 HISTORY_LIMIT = 12
-PRESENTATION_TRIGGERS = {"presentation", "product pdf", "flystat pdf", "brochure", "catalog"}
-MARKETING_TRIGGERS = {"marketing plan", "plan pdf", "comp plan", "compensation plan"}
+PRESENTATION_TRIGGERS = {
+    "presentation",
+    "presentations",
+    "product pdf",
+    "flystat pdf",
+    "cgm flystat pdf",
+    "send presentation",
+    "send me presentation",
+    "brochure",
+    "catalog",
+}
+MARKETING_TRIGGERS = {
+    "marketing plan",
+    "plan pdf",
+    "comp plan",
+    "compensation plan",
+    "marketing pdf",
+    "investment file",
+    "send marketing",
+    "send me marketing",
+}
+CONVERSATION_END_TRIGGERS = {
+    "no more questions",
+    "no more question",
+    "that is all",
+    "that's all",
+    "all clear",
+    "clear now",
+    "got it",
+    "understood",
+    "thanks that is all",
+    "thank you that is all",
+    "no questions",
+}
 REGISTER_TRIGGERS = {"register", "registration", "sign up", "signup", "join", "website", "link"}
 DISTRIBUTOR_TRIGGERS = {"distributor", "distribution", "preorder", "pre-order", "wholesale", "dealer", "contacts form"}
 GREETING_TRIGGERS = {
@@ -133,6 +165,7 @@ Behavior:
 - Do not try to close the conversation yourself until the user clearly confirms they have no more questions
 - Primary goal: convert relevant traffic into investor registration through the referral link
 - Secondary goals: answer CGM Flystat product questions clearly, help with preorder/distributor requests, and route technical unknowns to the correct email
+- Do not mention the technical email unless the user explicitly asks for technical escalation or the answer is genuinely unavailable from the provided materials
 
 Project context:
 - CGM Flystat is a continuous glucose monitoring system
@@ -193,6 +226,20 @@ def append_sales_question(reply: str, topic: str, user_text: str, user: dict) ->
     return f"{stripped}\n\n{question}"
 
 
+async def send_closing_resources(update: Update, user: dict) -> None:
+    if not user.get("sent_items", {}).get("marketing"):
+        await send_file(update, MARKETING_FILE, "Marketing plan")
+        mark_sent(user, "marketing")
+
+    resources = (
+        "Useful links:\n"
+        f"- Investor registration: {REFERRAL_LINK}\n"
+        f"- Investor channel: {INVESTOR_CHANNEL}\n"
+        f"- Distributor/preorder form: {CONTACT_FORM}"
+    )
+    await update.message.reply_text(resources)
+
+
 def ensure_user(user_id: str) -> dict:
     if user_id not in users:
         users[user_id] = {"step": "ask_name", "history": [], "sent_items": {}}
@@ -209,6 +256,11 @@ def ensure_user(user_id: str) -> dict:
 def has_trigger(text: str, phrases: set[str]) -> bool:
     normalized = normalize_text(text)
     return any(phrase in normalized for phrase in phrases)
+
+
+def is_conversation_end(text: str) -> bool:
+    normalized = normalize_text(text)
+    return any(phrase in normalized for phrase in CONVERSATION_END_TRIGGERS)
 
 
 def detect_topic(text: str) -> str:
@@ -506,6 +558,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     step = user.get("step", "ask_name")
     topic = detect_topic(text)
 
+    if is_conversation_end(text):
+        await update.message.reply_text("Understood. Glad I could help.")
+        await send_closing_resources(update, user)
+        save_data(users)
+        return
+
     if step == "ask_name":
         extracted_name = extract_name(text)
         if extracted_name:
@@ -610,7 +668,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             f"Or email: {PARTNERS_EMAIL}"
         )
         mark_sent(user, "partners_contact")
-    if needs["wants_technical_help"] and TECH_EMAIL not in reply:
+    if ("tech email" in normalize_text(text) or "technical email" in normalize_text(text) or "who can answer" in normalize_text(text)) and TECH_EMAIL not in reply:
         reply = (
             f"{reply}\n\nIf you want a deeper technical review or a point that is not fully covered in the public materials, "
             f"you can send the request to {TECH_EMAIL}."
