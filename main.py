@@ -85,6 +85,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+APP_VERSION = (os.getenv("RAILWAY_GIT_COMMIT_SHA") or "local")[:7]
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 SYSTEM_PROMPT = """
@@ -151,6 +152,12 @@ def save_data(data: dict) -> None:
 
 def normalize_text(text: str) -> str:
     return text.strip().lower()
+
+
+def normalize_branding(text: str) -> str:
+    updated = re.sub(r"(?<!CGM\s)\bFlystat\b", "CGM Flystat", text)
+    updated = re.sub(r"\bCGM CGM Flystat\b", "CGM Flystat", updated)
+    return updated
 
 
 def ensure_user(user_id: str) -> dict:
@@ -375,6 +382,10 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("State cleared. What’s your name?")
 
 
+async def version(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(f"Bot version: {APP_VERSION}")
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.message.text:
         return
@@ -404,20 +415,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if topic == "register":
             mark_sent(user, "referral_link")
             mark_sent(user, "channel")
-        await update.message.reply_text(direct_reply)
+        await update.message.reply_text(normalize_branding(direct_reply))
         save_data(users)
         return
 
     if has_trigger(text, PRESENTATION_TRIGGERS):
         if user.get("sent_items", {}).get("presentation"):
             await update.message.reply_text(
-                "You already have the CGM Flystat presentation above, so let me build on it instead of sending the same PDF again."
+                normalize_branding(
+                    "You already have the CGM Flystat presentation above, so let me build on it instead of sending the same PDF again."
+                )
             )
         else:
             await send_file(update, FLYSTAT_FILE, "CGM Flystat presentation")
             mark_sent(user, "presentation")
             await update.message.reply_text(
-                "Here’s the CGM Flystat presentation. If you want, I can also break down what the product does and why the project may be attractive from an investor perspective."
+                normalize_branding(
+                    "Here’s the CGM Flystat presentation. If you want, I can also break down what the product does and why the project may be attractive from an investor perspective."
+                )
             )
         save_data(users)
         return
@@ -425,13 +440,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if has_trigger(text, MARKETING_TRIGGERS):
         if user.get("sent_items", {}).get("marketing"):
             await update.message.reply_text(
-                "You already have the marketing plan, so let me focus on the investor logic and key numbers instead of sending the same file again."
+                normalize_branding(
+                    "You already have the marketing plan, so let me focus on the investor logic and key numbers instead of sending the same file again."
+                )
             )
         else:
             await send_file(update, MARKETING_FILE, "Marketing plan")
             mark_sent(user, "marketing")
             await update.message.reply_text(
-                "Here’s the marketing plan. If you want, I can also walk you through the business side in plain English."
+                normalize_branding(
+                    "Here’s the marketing plan. If you want, I can also walk you through the business side in plain English."
+                )
             )
         save_data(users)
         return
@@ -463,6 +482,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     reply = merge_sales_cta(reply, text)
+    reply = normalize_branding(reply)
     needs = detect_resource_needs(text)
     if needs["wants_article"] and not user.get("sent_items", {}).get("article"):
         reply = (
@@ -489,6 +509,7 @@ def main() -> None:
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("reset", reset))
+    app.add_handler(CommandHandler("version", version))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Python 3.14+ may not create a default event loop automatically.
