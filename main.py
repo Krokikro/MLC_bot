@@ -38,10 +38,14 @@ DATA_FILE = BASE_DIR / "data.json"
 FLYSTAT_FILE = BASE_DIR / "flystat.pdf"
 MARKETING_FILE = BASE_DIR / "marketing.pdf"
 VIDEO_LINK = "https://www.youtube.com/watch?v=mYzSyPbhhlU"
+TECH_EMAIL = "company@mlc.health"
+PARTNERS_EMAIL = "partners@mlc.health"
+CONTACT_FORM = "https://flystat.com/ru/contacts"
 HISTORY_LIMIT = 12
 PRESENTATION_TRIGGERS = {"presentation", "product pdf", "flystat pdf", "brochure", "catalog"}
 MARKETING_TRIGGERS = {"marketing plan", "plan pdf", "comp plan", "compensation plan"}
 REGISTER_TRIGGERS = {"register", "registration", "sign up", "signup", "join", "website", "link"}
+DISTRIBUTOR_TRIGGERS = {"distributor", "distribution", "preorder", "pre-order", "wholesale", "dealer", "contacts form"}
 GREETING_TRIGGERS = {
     "hi",
     "hello",
@@ -124,7 +128,11 @@ Behavior:
 - If a resource would help, mention it naturally rather than forcing it into every answer
 - When the user raises an objection, handle the objection directly and concretely before suggesting a next step
 - Prefer objection handling over repeating the same links again and again
-- End each substantive reply with one open-ended question that gently moves the person toward evaluating the investment opportunity
+- End each substantive reply with one open-ended question that matches the user's topic
+- Your goal is to answer questions so clearly that the user has fewer or no unresolved questions left
+- Do not try to close the conversation yourself until the user clearly confirms they have no more questions
+- Primary goal: convert relevant traffic into investor registration through the referral link
+- Secondary goals: answer CGM Flystat product questions clearly, help with preorder/distributor requests, and route technical unknowns to the correct email
 
 Project context:
 - CGM Flystat is a continuous glucose monitoring system
@@ -140,6 +148,9 @@ Useful resources:
 - Marketing plan is available on request
 - Referral registration link: https://my.mlc.health/bmx318
 - Investor Telegram channel: https://t.me/MLC_health_channel_en
+- Technical contact email: company@mlc.health
+- Distributor and preorder contact email: partners@mlc.health
+- Distributor and preorder contact form: https://flystat.com/ru/contacts
 """.strip()
 
 
@@ -203,6 +214,8 @@ def has_trigger(text: str, phrases: set[str]) -> bool:
 def detect_topic(text: str) -> str:
     normalized = normalize_text(text)
 
+    if any(phrase in normalized for phrase in DISTRIBUTOR_TRIGGERS):
+        return "distribution"
     if any(phrase in normalized for phrase in REGISTER_TRIGGERS):
         return "register"
     if any(phrase in normalized for phrase in MARKETING_TRIGGERS | BUSINESS_HINTS):
@@ -286,6 +299,7 @@ def build_system_messages(user_name: str, topic: str) -> list[dict]:
         "greeting": "The user is greeting you. Reply briefly and naturally, then move the conversation forward without sounding scripted.",
         "product": "The user is asking about the product side. Explain simply, concretely, and like a smart human consultant. If relevant, connect product traction to investor upside.",
         "business": "The user is asking about the business or earning side. Explain clearly and realistically, without hype or made-up specifics. Use numerical facts from the provided context whenever they strengthen the investment case.",
+        "distribution": "The user is asking about becoming a distributor or making a preorder. Answer directly with the form URL and partner email, explain the next step clearly, and do not push the investment route in that reply.",
         "register": "The user is asking how to join or register. Give the registration link directly and add one short helpful line.",
         "general": "The user is having a normal conversation or asking a general question. Answer naturally and keep momentum. If the user is exploring investment logic, use concrete numbers from the provided context where relevant.",
     }
@@ -299,7 +313,9 @@ def build_system_messages(user_name: str, topic: str) -> list[dict]:
                 "Always refer to the product as CGM Flystat, not just Flystat. "
                 "When describing MLC, make it clear that MLC is the company developing and owning the technology, "
                 "and that the investment proposition is participation in that technology project as a co-owner according to company materials. "
-                "If the user mentions Ivan Saltanov, identify him as Founder and CEO of MLC according to official MLC materials."
+                "If the user mentions Ivan Saltanov, identify him as Founder and CEO of MLC according to official MLC materials. "
+                f"If a technical question cannot be answered confidently from the available materials, direct the user to {TECH_EMAIL}. "
+                f"If the user wants preorder or distributor information, direct them to {CONTACT_FORM} or {PARTNERS_EMAIL}."
             ),
         }
     )
@@ -309,6 +325,11 @@ def build_system_messages(user_name: str, topic: str) -> list[dict]:
 def build_direct_reply(topic: str) -> str | None:
     if topic == "greeting":
         return "Hey. MLC is a health-tech company developing its own CGM Flystat continuous glucose monitoring system and inviting investors to participate in the growth of that technology project. What would you like to know first?"
+    if topic == "distribution":
+        return (
+            f"For a distributor request or preorder, the fastest option is the contact form: {CONTACT_FORM}\n\n"
+            f"If you prefer email, use {PARTNERS_EMAIL}."
+        )
     if topic == "register":
         return (
             f"You can register here using my referral link: {REFERRAL_LINK}\n\n"
@@ -507,6 +528,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     direct_reply = build_direct_reply(topic)
     if direct_reply:
+        if topic == "distribution":
+            mark_sent(user, "partners_contact")
         if topic == "register":
             mark_sent(user, "referral_link")
             mark_sent(user, "channel")
@@ -577,9 +600,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    reply = merge_sales_cta(reply, text)
+    if topic not in {"distribution"}:
+        reply = merge_sales_cta(reply, text)
     reply = normalize_branding(reply)
     needs = detect_resource_needs(text)
+    if (needs["wants_distribution"] or needs["wants_preorder"]) and not user.get("sent_items", {}).get("partners_contact"):
+        reply = (
+            f"{reply}\n\nFor a distributor request or preorder, use the contact form: {CONTACT_FORM}\n"
+            f"Or email: {PARTNERS_EMAIL}"
+        )
+        mark_sent(user, "partners_contact")
+    if needs["wants_technical_help"] and TECH_EMAIL not in reply:
+        reply = (
+            f"{reply}\n\nIf you want a deeper technical review or a point that is not fully covered in the public materials, "
+            f"you can send the request to {TECH_EMAIL}."
+        )
     if needs["wants_article"] and not user.get("sent_items", {}).get("article"):
         reply = (
             f"{reply}\n\nHere is the Health Magazine article link as an outside media reference: "

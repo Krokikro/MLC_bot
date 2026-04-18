@@ -483,6 +483,9 @@ def detect_resource_needs(user_text: str) -> dict:
         "wants_presentation": any(term in normalized for term in {"presentation", "pdf", "brochure", "product pdf"}),
         "wants_marketing": any(term in normalized for term in {"marketing plan", "comp plan", "business plan", "partner plan"}),
         "wants_article": any(term in normalized for term in {"article", "press", "media", "magazine", "news link"}),
+        "wants_distribution": any(term in normalized for term in {"distributor", "distribution", "dealer", "wholesale"}),
+        "wants_preorder": any(term in normalized for term in {"preorder", "pre-order", "order device", "buy device", "contact form"}),
+        "wants_technical_help": any(term in normalized for term in {"technical", "specification", "accuracy", "sensor", "app", "battery", "compatibility"}),
         "serious_investor": any(
             term in normalized
             for term in {
@@ -561,6 +564,8 @@ def build_followup_memory(user: dict, user_text: str) -> str:
         messages.append("You already have the marketing plan, so I'll focus on the key investor points instead of sending the file again.")
     if needs["wants_article"] and sent.get("article"):
         messages.append("I already shared the Health Magazine article link, so I can connect it to your question directly.")
+    if (needs["wants_distribution"] or needs["wants_preorder"]) and sent.get("partners_contact"):
+        messages.append("I already shared the distributor and preorder contact details, so I can focus on the next practical step.")
     if needs["serious_investor"] and sent.get("referral_link"):
         messages.append("You already have the registration link, so the next step is simply to complete registration if the investment case makes sense to you.")
     if needs["serious_investor"] and sent.get("channel"):
@@ -572,6 +577,8 @@ def build_followup_memory(user: dict, user_text: str) -> str:
 def build_sales_question(topic: str, user_text: str, user: dict) -> str:
     normalized = user_text.lower()
 
+    if topic == "distribution":
+        return "Would you like the quickest path to be the contact form or the partners email?"
     if topic == "register":
         return "What is the main thing you want to clarify before registering as an investor?"
     if topic == "business":
@@ -579,7 +586,9 @@ def build_sales_question(topic: str, user_text: str, user: dict) -> str:
             return "What would help you feel more confident about the investment case: proof of execution, market size, or ownership structure?"
         return "What part of the investment side would you like to evaluate next: market potential, ownership, or entry options?"
     if topic == "product":
-        return "How do you see CGM Flystat fitting into the kind of health-tech project you would consider investing in?"
+        if any(term in normalized for term in {"technical", "specification", "sensor", "accuracy", "battery", "compatibility"}):
+            return "What technical detail would you like me to clarify next?"
+        return "What would you like to understand next about CGM Flystat: how it works, who it is for, or why it matters commercially?"
     if topic == "greeting":
         return "What would you like to assess first: the product, the market opportunity, or the investor model?"
     if user.get("sent_items", {}).get("referral_link"):
