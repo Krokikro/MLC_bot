@@ -140,6 +140,18 @@ SEED_DOCUMENTS = [
         ),
     },
     {
+        "title": "Certification and commercialization status",
+        "kind": "market",
+        "source": "https://my.mlc.health/en/help/company and https://my.mlc.health/en/site/newsinfo/3031",
+        "content": (
+            "The MLC help section says that by spring 2026 the industrial sample was ready, internal testing and debugging were in their final stages, "
+            "and the process of obtaining CE certification had already been initiated. The same help page says a limited first batch of 10,000 devices is planned "
+            "for 2026 after successful testing, and that those first devices are intended for final industrial certification, field testing, and demonstration to partners and investors. "
+            "MLC's 2025 results page says international memorandums were signed with partners in Saudi Arabia, the UAE, and other regions. "
+            "If asked about 2027 commercialization timing, present it as a company target or expected next step after certification, not as a completed fact."
+        ),
+    },
+    {
         "title": "Health Magazine article link",
         "kind": "article",
         "source": "https://healthmagazine.ae/press_release/19320/fly/",
@@ -375,6 +387,55 @@ def detect_resource_needs(user_text: str) -> dict:
             }
         ),
     }
+
+
+OBJECTION_HANDLERS = {
+    "too risky": (
+        "Address risk by emphasizing that this is not just an idea on paper: company materials describe in-house technology, patents, "
+        "an assessed IP value above 108 million dollars for the Chinese market, production preparation in China, and an already built investor and partner network. "
+        "Do not say risk is absent. Say the user is still evaluating execution risk, but the project shows more substance than a concept-only startup."
+    ),
+    "is it real": (
+        "Address 'is it real' by pointing to specific proof points from company materials: industrial samples, patent portfolio, contract manufacturing preparation in China, "
+        "project information pages, public news flow, official leadership identity, conferences, and product demonstrations. "
+        "Also mention the Health Magazine article link if outside validation is relevant."
+    ),
+    "why now": (
+        "Address 'why now' by combining market timing and company stage. Explain that diabetes prevalence is growing, the CGM market is expanding, "
+        "and MLC positions itself at the stage between developed technology and scaling into production and certification."
+    ),
+    "why this company": (
+        "Address 'why this company' by emphasizing that MLC presents itself as the company developing and owning the technology behind CGM Flystat, "
+        "with patents, production preparation, Founder and CEO Ivan Saltanov, and a specific commercialization path rather than a generic reseller story."
+    ),
+    "what do investors actually own": (
+        "Address ownership clearly. Company materials say investors buy investment shares tied to the project and can obtain certificates confirming ownership rights. "
+        "Explain that MLC describes investors as participants in the technology project and co-owners of the development through the investment structure, "
+        "with potential dividends after production launch and product sales according to company materials."
+    ),
+}
+
+
+def detect_objection(user_text: str) -> str:
+    normalized = user_text.lower()
+    patterns = {
+        "too risky": ["too risky", "risk", "unsafe investment", "not safe", "sounds risky"],
+        "is it real": ["is it real", "real company", "real project", "scam", "fake", "proof"],
+        "why now": ["why now", "why should i invest now", "why this moment", "why today"],
+        "why this company": ["why mlc", "why this company", "why your company", "why not another company"],
+        "what do investors actually own": [
+            "what do investors actually own",
+            "what do investors own",
+            "what do i own",
+            "what am i buying",
+            "shares of what",
+            "ownership",
+        ],
+    }
+    for objection, terms in patterns.items():
+        if any(term in normalized for term in terms):
+            return objection
+    return ""
 
 
 def build_followup_memory(user: dict, user_text: str) -> str:

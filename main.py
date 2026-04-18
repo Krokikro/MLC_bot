@@ -22,8 +22,10 @@ from telegram.ext import (
 from knowledge import INVESTOR_CHANNEL
 from knowledge import REFERRAL_LINK
 from knowledge import build_followup_memory
+from knowledge import detect_objection
 from knowledge import detect_resource_needs
 from knowledge import merge_sales_cta
+from knowledge import OBJECTION_HANDLERS
 from knowledge import select_relevant_context
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -109,6 +111,8 @@ Behavior:
 - When appropriate, move the user toward registration through the referral link and, for serious investor interest, toward the investor Telegram channel
 - Ask a follow-up question only if the user’s request is too vague to answer usefully
 - If a resource would help, mention it naturally rather than forcing it into every answer
+- When the user raises an objection, handle the objection directly and concretely before suggesting a next step
+- Prefer objection handling over repeating the same links again and again
 
 Project context:
 - CGM Flystat is a continuous glucose monitoring system
@@ -272,7 +276,7 @@ def build_system_messages(user_name: str, topic: str) -> list[dict]:
 
 def build_direct_reply(topic: str) -> str | None:
     if topic == "greeting":
-        return "Hey. What would you like to know about Flystat or the investment side of the MLC project?"
+        return "Hey. MLC is a health-tech company developing its own CGM Flystat continuous glucose monitoring system and inviting investors to participate in the growth of that technology project. What would you like to know first?"
     if topic == "register":
         return (
             f"You can register here using my referral link: {REFERRAL_LINK}\n\n"
@@ -304,6 +308,7 @@ def generate_ai_reply(user: dict, user_name: str, history: list[dict], message_t
     messages = build_system_messages(user_name, topic)
     knowledge_context = select_relevant_context(message_text)
     followup_memory = build_followup_memory(user, message_text)
+    objection = detect_objection(message_text)
     messages.append(
         {
             "role": "system",
@@ -318,6 +323,13 @@ def generate_ai_reply(user: dict, user_name: str, history: list[dict], message_t
             {
                 "role": "system",
                 "content": f"Conversation memory about already shared materials: {followup_memory}",
+            }
+        )
+    if objection:
+        messages.append(
+            {
+                "role": "system",
+                "content": f"Detected objection: {objection}. Handling guidance: {OBJECTION_HANDLERS[objection]}",
             }
         )
     messages.extend(history[-HISTORY_LIMIT:])
@@ -347,11 +359,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if name:
         await update.message.reply_text(
-            f"Welcome back, {name}.\nLet’s start fresh. What’s your name?"
+            f"Welcome back, {name}.\nMLC is a health-tech company developing its own CGM Flystat continuous glucose monitoring system, and investors can participate in the growth of that technology project.\n\nWhat’s your name?"
         )
         return
 
-    await update.message.reply_text("Hey. Welcome.\nWhat’s your name?")
+    await update.message.reply_text(
+        "Hey. MLC is a health-tech company developing its own CGM Flystat continuous glucose monitoring system, and investors can participate in the growth of that technology project.\n\nWhat’s your name?"
+    )
 
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
