@@ -37,11 +37,9 @@ GREETING_WORDS = {
     "yo",
 }
 NAME_PREFIX_PATTERNS = [
-    re.compile(r"^(?:hi|hello|hey)[,\s]+i am\s+([a-zA-Z][a-zA-Z\-']{1,29})$", re.IGNORECASE),
-    re.compile(r"^(?:hi|hello|hey)[,\s]+i'm\s+([a-zA-Z][a-zA-Z\-']{1,29})$", re.IGNORECASE),
-    re.compile(r"^i am\s+([a-zA-Z][a-zA-Z\-']{1,29})$", re.IGNORECASE),
-    re.compile(r"^i'm\s+([a-zA-Z][a-zA-Z\-']{1,29})$", re.IGNORECASE),
-    re.compile(r"^my name is\s+([a-zA-Z][a-zA-Z\-']{1,29})$", re.IGNORECASE),
+    re.compile(r"(?:^|[,\s])i am\s+([a-zA-Z][a-zA-Z\-']{1,29})(?:$|[.!?])", re.IGNORECASE),
+    re.compile(r"(?:^|[,\s])i'm\s+([a-zA-Z][a-zA-Z\-']{1,29})(?:$|[.!?])", re.IGNORECASE),
+    re.compile(r"(?:^|[,\s])my name is\s+([a-zA-Z][a-zA-Z\-']{1,29})(?:$|[.!?])", re.IGNORECASE),
 ]
 
 load_dotenv()
@@ -145,14 +143,29 @@ def extract_name(text: str) -> str | None:
     cleaned = text.strip()
 
     for pattern in NAME_PREFIX_PATTERNS:
-        match = pattern.match(cleaned)
+        match = pattern.search(cleaned)
         if match:
-            return match.group(1)
+            return match.group(1).strip().title()
 
     if looks_like_name(cleaned):
-        return cleaned
+        return cleaned.strip().title()
 
     return None
+
+
+def clean_stored_name(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    extracted = extract_name(value)
+    if extracted:
+        return extracted
+
+    normalized = normalize_text(value)
+    if normalized in GREETING_WORDS or len(value.strip().split()) > 3:
+        return None
+
+    return value.strip().title()
 
 
 def update_history(user: dict, user_text: str, assistant_text: str) -> None:
@@ -205,7 +218,8 @@ users = load_data()
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.effective_user.id)
     user = ensure_user(user_id)
-    name = user.get("name")
+    name = clean_stored_name(user.get("name"))
+    user["name"] = name
     user["step"] = "ask_name"
     user["history"] = []
     save_data(users)
