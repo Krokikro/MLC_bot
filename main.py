@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -22,6 +23,7 @@ from telegram.ext import (
 from knowledge import INVESTOR_CHANNEL
 from knowledge import REFERRAL_LINK
 from knowledge import build_followup_memory
+from knowledge import build_sales_question
 from knowledge import detect_objection
 from knowledge import detect_resource_needs
 from knowledge import merge_sales_cta
@@ -86,6 +88,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 APP_VERSION = (os.getenv("RAILWAY_GIT_COMMIT_SHA") or "local")[:7]
+FOLLOWUP_AFTER_SECONDS = 24 * 60 * 60
+FOLLOWUP_CHECK_INTERVAL_SECONDS = 10 * 60
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 SYSTEM_PROMPT = """
@@ -105,6 +109,7 @@ Style:
 Behavior:
 - Answer the actual question directly before anything else
 - Rely on the provided source context from PDFs, official sites, and company news
+- When the available source context contains numbers, use those numbers in your answer when relevant
 - If a detail is uncertain, say what the available materials show and be honest about the uncertainty
 - Never invent exact dates, launch timelines, statistics, medical claims, or compensation details
 - Do not say you are just a bot or refuse normal conversation unless absolutely necessary
@@ -114,6 +119,7 @@ Behavior:
 - If a resource would help, mention it naturally rather than forcing it into every answer
 - When the user raises an objection, handle the objection directly and concretely before suggesting a next step
 - Prefer objection handling over repeating the same links again and again
+- End each substantive reply with one open-ended question that gently moves the person toward evaluating the investment opportunity
 
 Project context:
 - CGM Flystat is a continuous glucose monitoring system
@@ -160,6 +166,17 @@ def normalize_branding(text: str) -> str:
     return updated
 
 
+def append_sales_question(reply: str, topic: str, user_text: str, user: dict) -> str:
+    question = build_sales_question(topic, user_text, user)
+    if not question:
+        return reply
+
+    stripped = reply.rstrip()
+    if "?" in stripped[-180:]:
+        return stripped
+    return f"{stripped}\n\n{question}"
+
+
 def ensure_user(user_id: str) -> dict:
     if user_id not in users:
         users[user_id] = {"step": "ask_name", "history": [], "sent_items": {}}
@@ -167,6 +184,9 @@ def ensure_user(user_id: str) -> dict:
     users[user_id].setdefault("history", [])
     users[user_id].setdefault("step", "ask_name")
     users[user_id].setdefault("sent_items", {})
+    users[user_id].setdefault("chat_id", None)
+    users[user_id].setdefault("last_user_message_at", None)
+    users[user_id].setdefault("followup_sent_at", None)
     return users[user_id]
 
 
@@ -259,10 +279,10 @@ def build_system_messages(user_name: str, topic: str) -> list[dict]:
 
     topic_guidance = {
         "greeting": "The user is greeting you. Reply briefly and naturally, then move the conversation forward without sounding scripted.",
-        "product": "The user is asking about the product side. Explain simply, concretely, and like a smart human consultant.",
-        "business": "The user is asking about the business or earning side. Explain clearly and realistically, without hype or made-up specifics.",
+        "product": "The user is asking about the product side. Explain simply, concretely, and like a smart human consultant. If relevant, connect product traction to investor upside.",
+        "business": "The user is asking about the business or earning side. Explain clearly and realistically, without hype or made-up specifics. Use numerical facts from the provided context whenever they strengthen the investment case.",
         "register": "The user is asking how to join or register. Give the registration link directly and add one short helpful line.",
-        "general": "The user is having a normal conversation or asking a general question. Answer naturally and keep momentum.",
+        "general": "The user is having a normal conversation or asking a general question. Answer naturally and keep momentum. If the user is exploring investment logic, use concrete numbers from the provided context where relevant.",
     }
     messages.append(
         {"role": "system", "content": topic_guidance.get(topic, topic_guidance["general"])}
@@ -377,13 +397,54 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.effective_user.id)
-    users[user_id] = {"step": "ask_name", "history": []}
+    users[user_id] = {"step": "ask_name", "history": [], "sent_items": {}, "chat_id": update.effective_chat.id, "last_user_message_at": None, "followup_sent_at": None}
     save_data(users)
     await update.message.reply_text("State cleared. What’s your name?")
 
 
 async def version(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(f"Bot version: {APP_VERSION}")
+
+
+async def followup_loop(application) -> None:
+    while True:
+        now = int(time.time())
+        dirty = False
+        for user in users.values():
+            chat_id = user.get("chat_id")
+            last_user_message_at = user.get("last_user_message_at")
+            followup_sent_at = user.get("followup_sent_at")
+            name = clean_stored_name(user.get("name")) or "there"
+
+            if not chat_id or not last_user_message_at:
+                continue
+            if user.get("step") == "ask_name":
+                continue
+            if followup_sent_at and followup_sent_at >= last_user_message_at:
+                continue
+            if now - int(last_user_message_at) < FOLLOWUP_AFTER_SECONDS:
+                continue
+
+            text = (
+                f"Hi {name}, I just wanted to check in. What decision are you leaning toward on the investment side, "
+                "or what is still making you hesitate?"
+            )
+            try:
+                await application.bot.send_message(chat_id=chat_id, text=text)
+            except Exception:
+                continue
+
+            user["followup_sent_at"] = now
+            dirty = True
+
+        if dirty:
+            save_data(users)
+
+        await asyncio.sleep(FOLLOWUP_CHECK_INTERVAL_SECONDS)
+
+
+async def post_init(application) -> None:
+    application.create_task(followup_loop(application))
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -393,6 +454,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
     user = ensure_user(user_id)
+    user["chat_id"] = update.effective_chat.id
+    user["last_user_message_at"] = int(time.time())
+    user["followup_sent_at"] = None
     step = user.get("step", "ask_name")
     topic = detect_topic(text)
 
@@ -415,24 +479,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if topic == "register":
             mark_sent(user, "referral_link")
             mark_sent(user, "channel")
-        await update.message.reply_text(normalize_branding(direct_reply))
+        direct_reply = append_sales_question(normalize_branding(direct_reply), topic, text, user)
+        await update.message.reply_text(direct_reply)
         save_data(users)
         return
 
     if has_trigger(text, PRESENTATION_TRIGGERS):
         if user.get("sent_items", {}).get("presentation"):
             await update.message.reply_text(
-                normalize_branding(
+                append_sales_question(normalize_branding(
                     "You already have the CGM Flystat presentation above, so let me build on it instead of sending the same PDF again."
-                )
+                ), topic, text, user)
             )
         else:
             await send_file(update, FLYSTAT_FILE, "CGM Flystat presentation")
             mark_sent(user, "presentation")
             await update.message.reply_text(
-                normalize_branding(
+                append_sales_question(normalize_branding(
                     "Here’s the CGM Flystat presentation. If you want, I can also break down what the product does and why the project may be attractive from an investor perspective."
-                )
+                ), topic, text, user)
             )
         save_data(users)
         return
@@ -440,17 +505,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if has_trigger(text, MARKETING_TRIGGERS):
         if user.get("sent_items", {}).get("marketing"):
             await update.message.reply_text(
-                normalize_branding(
+                append_sales_question(normalize_branding(
                     "You already have the marketing plan, so let me focus on the investor logic and key numbers instead of sending the same file again."
-                )
+                ), topic, text, user)
             )
         else:
             await send_file(update, MARKETING_FILE, "Marketing plan")
             mark_sent(user, "marketing")
             await update.message.reply_text(
-                normalize_branding(
+                append_sales_question(normalize_branding(
                     "Here’s the marketing plan. If you want, I can also walk you through the business side in plain English."
-                )
+                ), topic, text, user)
             )
         save_data(users)
         return
@@ -494,6 +559,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         mark_sent(user, "referral_link")
     if INVESTOR_CHANNEL in reply:
         mark_sent(user, "channel")
+    reply = append_sales_question(reply, topic, text, user)
 
     update_history(user, text, reply)
     user["step"] = "chat"
@@ -506,7 +572,7 @@ def main() -> None:
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN is missing. Put it in .env before starting the bot.")
 
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("reset", reset))
     app.add_handler(CommandHandler("version", version))

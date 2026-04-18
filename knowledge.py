@@ -290,7 +290,14 @@ def select_relevant_context(query: str, limit: int = 6) -> str:
         for chunk in chunks:
             lowered = chunk.lower()
             overlap = sum(1 for term in query_terms if term in lowered)
-            kind_boost = 2 if doc.get("kind") == query_kind else 0
+            if doc.get("kind") == query_kind:
+                kind_boost = 2
+            elif query_kind == "business" and doc.get("kind") in {"business", "market", "news"}:
+                kind_boost = 2
+            elif query_kind == "product" and doc.get("kind") in {"product", "market"}:
+                kind_boost = 1
+            else:
+                kind_boost = 0
             news_boost = 1 if query_kind == "news" and doc.get("kind") == "news" else 0
             score = overlap + kind_boost + news_boost
             if score <= 0:
@@ -455,3 +462,21 @@ def build_followup_memory(user: dict, user_text: str) -> str:
         messages.append("You also already have the investor channel link for ongoing updates and context.")
 
     return " ".join(messages)
+
+
+def build_sales_question(topic: str, user_text: str, user: dict) -> str:
+    normalized = user_text.lower()
+
+    if topic == "register":
+        return "What is the main thing you want to clarify before registering as an investor?"
+    if topic == "business":
+        if any(term in normalized for term in {"risk", "risky", "safe", "real", "scam", "fake"}):
+            return "What would help you feel more confident about the investment case: proof of execution, market size, or ownership structure?"
+        return "What part of the investment side would you like to evaluate next: market potential, ownership, or entry options?"
+    if topic == "product":
+        return "How do you see CGM Flystat fitting into the kind of health-tech project you would consider investing in?"
+    if topic == "greeting":
+        return "What would you like to assess first: the product, the market opportunity, or the investor model?"
+    if user.get("sent_items", {}).get("referral_link"):
+        return "What is still holding you back from making an investment decision?"
+    return "What would you like to understand better to decide whether this investment opportunity fits you?"
