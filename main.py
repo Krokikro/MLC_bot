@@ -19,14 +19,19 @@ from telegram.ext import (
     filters,
 )
 
+from knowledge import INVESTOR_CHANNEL
+from knowledge import REFERRAL_LINK
+from knowledge import merge_sales_cta
+from knowledge import select_relevant_context
+
 BASE_DIR = Path(__file__).resolve().parent
 DATA_FILE = BASE_DIR / "data.json"
 FLYSTAT_FILE = BASE_DIR / "flystat.pdf"
 MARKETING_FILE = BASE_DIR / "marketing.pdf"
 HISTORY_LIMIT = 12
-PRESENTATION_TRIGGERS = {"presentation", "flystat", "cgm", "product", "sensor"}
-MARKETING_TRIGGERS = {"marketing", "earn", "earning", "income", "business", "investment"}
-REGISTER_TRIGGERS = {"register", "registration", "sign up", "signup", "join", "website"}
+PRESENTATION_TRIGGERS = {"presentation", "product pdf", "flystat pdf", "brochure", "catalog"}
+MARKETING_TRIGGERS = {"marketing plan", "plan pdf", "comp plan", "compensation plan"}
+REGISTER_TRIGGERS = {"register", "registration", "sign up", "signup", "join", "website", "link"}
 GREETING_TRIGGERS = {
     "hi",
     "hello",
@@ -79,7 +84,7 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 SYSTEM_PROMPT = """
-You are a friendly, sharp, human-like English-speaking assistant inside a Telegram bot for MLC and CGM Flystat.
+You are a persuasive but credible English-speaking sales assistant for MLC and CGM Flystat inside a Telegram bot.
 
 Style:
 - Sound natural, warm, and conversational
@@ -87,19 +92,20 @@ Style:
 - Keep answers clear and useful
 - Use the user's name naturally when it helps
 - Write in American English only
-- Prefer 2 to 5 sentences unless the user asks for more detail
+- Answer first, then guide
+- Prefer 2 to 6 sentences unless the user asks for more detail
 - Avoid repetitive openings like "Certainly", "Of course", or "I'd be happy to"
+- Do not end with a question unless a clarification or next step is genuinely useful
 
 Behavior:
-- Answer questions helpfully even if you do not know the exact answer
-- If a detail is uncertain, say what you do know and be honest about the uncertainty
+- Answer the actual question directly before anything else
+- Rely on the provided source context from PDFs, official sites, and company news
+- If a detail is uncertain, say what the available materials show and be honest about the uncertainty
 - Never invent exact dates, launch timelines, statistics, medical claims, or compensation details
 - Do not say you are just a bot or refuse normal conversation unless absolutely necessary
-- Softly guide interested users toward the presentation, marketing plan, or registration link when relevant
-- If the user greets you, greet them back naturally and continue the conversation
-- If the user asks a vague question, ask one short clarifying question instead of giving a generic speech
-- If the user seems interested in the product, explain it in simple language first
-- If the user seems interested in the business side, explain it plainly before suggesting the marketing plan
+- Your commercial goal is to help the visitor see the advantages of becoming an investor in the project
+- When appropriate, move the user toward registration through the referral link and, for serious investor interest, toward the investor Telegram channel
+- Ask a follow-up question only if the user’s request is too vague to answer usefully
 - If a resource would help, mention it naturally rather than forcing it into every answer
 
 Project context:
@@ -114,8 +120,8 @@ Business context:
 Useful resources:
 - Presentation is available on request
 - Marketing plan is available on request
-- Registration link: https://mlc.health
-- English channel: https://t.me/MLC_health_channel_en
+- Referral registration link: https://my.mlc.health/bmx318
+- Investor Telegram channel: https://t.me/MLC_health_channel_en
 """.strip()
 
 
@@ -252,11 +258,11 @@ def build_system_messages(user_name: str, topic: str) -> list[dict]:
 
 def build_direct_reply(topic: str) -> str | None:
     if topic == "greeting":
-        return "Hey. What would you like to know about Flystat or the MLC project?"
+        return "Hey. What would you like to know about Flystat or the investment side of the MLC project?"
     if topic == "register":
         return (
-            "You can register here: https://mlc.health\n\n"
-            "If you want, I can also explain the product side or the business side before you sign up."
+            f"You can register here using my referral link: {REFERRAL_LINK}\n\n"
+            f"If you're looking at the investment side seriously, you can also follow the investor channel: {INVESTOR_CHANNEL}"
         )
     return None
 
@@ -277,14 +283,24 @@ def generate_ai_reply(user_name: str, history: list[dict], message_text: str, to
         )
 
     messages = build_system_messages(user_name, topic)
+    knowledge_context = select_relevant_context(message_text)
+    messages.append(
+        {
+            "role": "system",
+            "content": (
+                "Use this source context when answering. Prefer these materials over generic assumptions.\n\n"
+                f"{knowledge_context}"
+            ),
+        }
+    )
     messages.extend(history[-HISTORY_LIMIT:])
     messages.append({"role": "user", "content": message_text})
 
     response = openai_client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=messages,
-        temperature=0.8,
-        max_tokens=220,
+        temperature=0.7,
+        max_tokens=320,
     )
     reply = response.choices[0].message.content or "I could not generate a reply."
     return reply.strip()
@@ -350,7 +366,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if has_trigger(text, PRESENTATION_TRIGGERS):
         await send_file(update, FLYSTAT_FILE, "Flystat presentation")
         await update.message.reply_text(
-            "Here’s the presentation. If you want, I can also break down what Flystat does in simple words."
+            "Here’s the presentation. If you want, I can also break down what Flystat does and why the project may be attractive from an investor perspective."
         )
         return
 
@@ -386,6 +402,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "OpenAI returned an error. Check the model name and account status."
         )
         return
+
+    reply = merge_sales_cta(reply, text)
 
     update_history(user, text, reply)
     user["step"] = "chat"
