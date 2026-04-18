@@ -1,6 +1,7 @@
 import re
 import time
 from pathlib import Path
+from urllib.parse import quote_plus
 
 import requests
 from bs4 import BeautifulSoup
@@ -11,6 +12,20 @@ REFERRAL_LINK = "https://my.mlc.health/bmx318"
 INVESTOR_CHANNEL = "https://t.me/MLC_health_channel_en"
 CACHE_TTL_SECONDS = 6 * 60 * 60
 REQUEST_TIMEOUT_SECONDS = 12
+SEARCH_RESULT_LIMIT = 5
+PRIMARY_FACT_DOMAINS = (
+    "idf.org",
+    "who.int",
+    "ncbi.nlm.nih.gov",
+    "my.mlc.health",
+    "mlc.health",
+    "flystat.com",
+)
+LIVE_FALLBACK_SOURCES = [
+    "https://idf.org/about-diabetes/diabetes-facts-figures/?locale=en",
+    "https://www.who.int/diabetes/en/",
+    "https://www.ncbi.nlm.nih.gov/books/NBK618744/",
+]
 
 PDF_SOURCES = [
     {
@@ -193,6 +208,27 @@ def fetch_url_text(url: str) -> str:
     return normalize_text(text)
 
 
+def search_web(query: str) -> list[str]:
+    url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+    response = requests.get(
+        url,
+        timeout=REQUEST_TIMEOUT_SECONDS,
+        headers={"User-Agent": "MLCBot/1.0 (+web search)"},
+    )
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+    links: list[str] = []
+    for tag in soup.select("a.result__a"):
+        href = tag.get("href")
+        if not href or not href.startswith("http"):
+            continue
+        if href not in links:
+            links.append(href)
+        if len(links) >= SEARCH_RESULT_LIMIT:
+            break
+    return links
+
+
 def read_pdf_text(path: Path) -> str:
     reader = PdfReader(str(path))
     text = "\n".join((page.extract_text() or "") for page in reader.pages)
@@ -320,6 +356,75 @@ def select_relevant_context(query: str, limit: int = 6) -> str:
         ]
 
     return "\n\n".join(selected)
+
+
+def build_investment_facts_block() -> str:
+    return (
+        "Core investor facts to use when relevant:\n"
+        "- IDF 2025 says about 589 million adults worldwide were living with diabetes in 2024, and about 853 million are projected by 2050.\n"
+        "- IDF says diabetes affects about 1 in 9 adults and more than 4 in 5 adults with diabetes live in low- and middle-income countries.\n"
+        "- WHO says about 830 million people worldwide have diabetes.\n"
+        "- MLC materials say the CGM market was estimated at about $3.6 billion in 2020 with projected CAGR of about 12.1% from 2021 to 2028.\n"
+        "- MLC materials say the project's intellectual property portfolio includes 17 patents valued at more than $108 million.\n"
+        "- MLC materials say CE certification work had already been initiated by spring 2026 and that the project was moving from industrial sample readiness toward certification and commercialization."
+    )
+
+
+def needs_live_web_lookup(query: str) -> bool:
+    normalized = query.lower()
+    triggers = {
+        "market size",
+        "market volume",
+        "market potential",
+        "tam",
+        "sam",
+        "cagr",
+        "how big is the market",
+        "how many people",
+        "global market",
+        "diabetes numbers",
+        "market forecast",
+        "worldwide",
+        "industry size",
+    }
+    return any(term in normalized for term in triggers)
+
+
+def fetch_live_fact_block(query: str) -> str:
+    try:
+        links = search_web(query)
+    except Exception:
+        return ""
+
+    blocks: list[str] = []
+    for link in links:
+        if not any(domain in link for domain in PRIMARY_FACT_DOMAINS):
+            continue
+        try:
+            text = fetch_url_text(link)
+        except Exception:
+            continue
+        chunks = split_into_chunks(text, 650)
+        if not chunks:
+            continue
+        blocks.append(f"Live source: {link}\n{chunks[0]}")
+        if len(blocks) >= 3:
+            break
+
+    if not blocks:
+        for link in LIVE_FALLBACK_SOURCES:
+            try:
+                text = fetch_url_text(link)
+            except Exception:
+                continue
+            chunks = split_into_chunks(text, 650)
+            if not chunks:
+                continue
+            blocks.append(f"Live source: {link}\n{chunks[0]}")
+            if len(blocks) >= 3:
+                break
+
+    return "\n\n".join(blocks)
 
 
 def build_sales_cta(user_text: str) -> str:

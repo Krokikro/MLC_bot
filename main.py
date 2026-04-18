@@ -23,10 +23,13 @@ from telegram.ext import (
 from knowledge import INVESTOR_CHANNEL
 from knowledge import REFERRAL_LINK
 from knowledge import build_followup_memory
+from knowledge import build_investment_facts_block
 from knowledge import build_sales_question
 from knowledge import detect_objection
 from knowledge import detect_resource_needs
+from knowledge import fetch_live_fact_block
 from knowledge import merge_sales_cta
+from knowledge import needs_live_web_lookup
 from knowledge import OBJECTION_HANDLERS
 from knowledge import select_relevant_context
 
@@ -334,6 +337,8 @@ def generate_ai_reply(user: dict, user_name: str, history: list[dict], message_t
 
     messages = build_system_messages(user_name, topic)
     knowledge_context = select_relevant_context(message_text)
+    investment_facts_block = build_investment_facts_block() if topic in {"business", "general"} else ""
+    live_fact_block = fetch_live_fact_block(message_text) if needs_live_web_lookup(message_text) else ""
     followup_memory = build_followup_memory(user, message_text)
     objection = detect_objection(message_text)
     messages.append(
@@ -345,6 +350,24 @@ def generate_ai_reply(user: dict, user_name: str, history: list[dict], message_t
             ),
         }
     )
+    if investment_facts_block:
+        messages.append(
+            {
+                "role": "system",
+                "content": f"Always-consider investor facts block:\n{investment_facts_block}",
+            }
+        )
+    if live_fact_block:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Additional live web facts for this question from primary or trusted sources. "
+                    "Use them when relevant and mention uncertainty if figures differ across sources.\n\n"
+                    f"{live_fact_block}"
+                ),
+            }
+        )
     if followup_memory:
         messages.append(
             {
