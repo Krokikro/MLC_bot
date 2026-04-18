@@ -366,6 +366,8 @@ def build_system_messages(user_name: str, topic: str) -> list[dict]:
                 "When describing MLC, make it clear that MLC is the company developing and owning the technology, "
                 "and that the investment proposition is participation in that technology project as a co-owner according to company materials. "
                 "If the user mentions Ivan Saltanov, identify him as Founder and CEO of MLC according to official MLC materials. "
+                "If the user mentions Sergey Melenkov, identify him as co-founder of MLC and Technical Director responsible for all stages of CGM Flystat development and production. "
+                "If the user mentions Elena Saltanova, identify her as co-founder of MLC responsible for Public Relations and International Development. "
                 f"If a technical question cannot be answered confidently from the available materials, direct the user to {TECH_EMAIL}. "
                 f"If the user wants preorder or distributor information, direct them to {CONTACT_FORM} or {PARTNERS_EMAIL}."
             ),

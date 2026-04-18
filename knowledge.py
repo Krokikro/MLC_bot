@@ -134,6 +134,24 @@ SEED_DOCUMENTS = [
         ),
     },
     {
+        "title": "Sergey Melenkov role",
+        "kind": "business",
+        "source": "project briefing provided by the owner",
+        "content": (
+            "Sergey Melenkov is a co-founder of the MLC project and the Technical Director. "
+            "He is responsible for the full cycle of CGM Flystat development and production."
+        ),
+    },
+    {
+        "title": "Elena Saltanova role",
+        "kind": "business",
+        "source": "project briefing provided by the owner",
+        "content": (
+            "Elena Saltanova is a co-founder of the MLC project. "
+            "She is responsible for Public Relations and International Development."
+        ),
+    },
+    {
         "title": "Global diabetes burden from IDF 2025",
         "kind": "market",
         "source": "https://idf.org/about-diabetes/diabetes-facts-figures/?locale=en",
