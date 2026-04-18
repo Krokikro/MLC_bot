@@ -503,10 +503,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(
                 f"Nice to meet you, {extracted_name}."
             )
+            await update.message.reply_text(
+                "Take a quick look at this short video about the MLC project."
+            )
             await send_video(
                 update,
                 VIDEO_FILE,
-                "Take a quick look at this short video about the MLC project.",
+                "MLC project video",
             )
             await update.message.reply_text(
                 "What would be more interesting to you right now: the product or the investment side of the project?"
