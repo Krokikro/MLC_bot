@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -35,6 +36,13 @@ GREETING_WORDS = {
     "good evening",
     "yo",
 }
+NAME_PREFIX_PATTERNS = [
+    re.compile(r"^(?:hi|hello|hey)[,\s]+i am\s+([a-zA-Z][a-zA-Z\-']{1,29})$", re.IGNORECASE),
+    re.compile(r"^(?:hi|hello|hey)[,\s]+i'm\s+([a-zA-Z][a-zA-Z\-']{1,29})$", re.IGNORECASE),
+    re.compile(r"^i am\s+([a-zA-Z][a-zA-Z\-']{1,29})$", re.IGNORECASE),
+    re.compile(r"^i'm\s+([a-zA-Z][a-zA-Z\-']{1,29})$", re.IGNORECASE),
+    re.compile(r"^my name is\s+([a-zA-Z][a-zA-Z\-']{1,29})$", re.IGNORECASE),
+]
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -133,6 +141,20 @@ def looks_like_name(text: str) -> bool:
     return True
 
 
+def extract_name(text: str) -> str | None:
+    cleaned = text.strip()
+
+    for pattern in NAME_PREFIX_PATTERNS:
+        match = pattern.match(cleaned)
+        if match:
+            return match.group(1)
+
+    if looks_like_name(cleaned):
+        return cleaned
+
+    return None
+
+
 def update_history(user: dict, user_text: str, assistant_text: str) -> None:
     history = user.get("history", [])
     history.append({"role": "user", "content": user_text})
@@ -214,12 +236,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     step = user.get("step", "ask_name")
 
     if step == "ask_name":
-        if looks_like_name(text):
-            user["name"] = text
+        extracted_name = extract_name(text)
+        if extracted_name:
+            user["name"] = extracted_name
             user["step"] = "chat"
             save_data(users)
             await update.message.reply_text(
-                f"Nice to meet you, {text}.\n\nWhat would you like to know about Flystat or the MLC project?"
+                f"Nice to meet you, {extracted_name}.\n\nWhat would you like to know about Flystat or the MLC project?"
             )
             return
 
@@ -291,7 +314,7 @@ def main() -> None:
     # Python 3.14+ may not create a default event loop automatically.
     asyncio.set_event_loop(asyncio.new_event_loop())
     print("Bot is running...")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
