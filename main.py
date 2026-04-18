@@ -35,6 +35,7 @@ from knowledge import select_relevant_context
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_FILE = BASE_DIR / "data.json"
+VIDEO_FILE = BASE_DIR / "MLC_video.mp4"
 FLYSTAT_FILE = BASE_DIR / "flystat.pdf"
 MARKETING_FILE = BASE_DIR / "marketing.pdf"
 HISTORY_LIMIT = 12
@@ -105,7 +106,8 @@ Style:
 - Use the user's name naturally when it helps
 - Write in American English only
 - Answer first, then guide
-- Prefer 2 to 6 sentences unless the user asks for more detail
+- Prefer 2 to 4 sentences unless the user asks for more detail
+- Keep replies compact and high-signal
 - Avoid repetitive openings like "Certainly", "Of course", or "I'd be happy to"
 - Do not end with a question unless a clarification or next step is genuinely useful
 
@@ -324,6 +326,15 @@ async def send_file(update: Update, path: Path, caption: str) -> None:
         await update.message.reply_document(document=file, caption=caption)
 
 
+async def send_video(update: Update, path: Path, caption: str) -> None:
+    if not path.exists():
+        await update.message.reply_text(f"File not found: {path.name}")
+        return
+
+    with path.open("rb") as file:
+        await update.message.reply_video(video=file, caption=caption)
+
+
 def mark_sent(user: dict, item: str) -> None:
     sent = user.setdefault("sent_items", {})
     sent[item] = True
@@ -389,7 +400,7 @@ def generate_ai_reply(user: dict, user_name: str, history: list[dict], message_t
         model=OPENAI_MODEL,
         messages=messages,
         temperature=0.7,
-        max_tokens=320,
+        max_tokens=220,
     )
     reply = response.choices[0].message.content or "I could not generate a reply."
     return reply.strip()
@@ -490,7 +501,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             user["step"] = "chat"
             save_data(users)
             await update.message.reply_text(
-                f"Nice to meet you, {extracted_name}.\n\nWhat would you like to know about Flystat or the MLC project?"
+                f"Nice to meet you, {extracted_name}."
+            )
+            await send_video(
+                update,
+                VIDEO_FILE,
+                "Take a quick look at this short video about the MLC project.",
+            )
+            await update.message.reply_text(
+                "What would be more interesting to you right now: the product or the investment side of the project?"
             )
             return
 
