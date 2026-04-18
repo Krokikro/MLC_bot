@@ -31,6 +31,36 @@ WEB_SOURCES = [
     {"title": "Flystat official site", "url": "https://flystat.com/en", "kind": "product"},
     {"title": "MLC official site", "url": "https://mlc.health/", "kind": "business"},
     {
+        "title": "MLC project information",
+        "url": "https://my.mlc.health/en/site/project-info?f=1",
+        "kind": "business",
+    },
+    {
+        "title": "Investing with MLC and CEO Ivan Saltanov",
+        "url": "https://my.mlc.health/en/site/newsinfo/2704",
+        "kind": "news",
+    },
+    {
+        "title": "Global CGM market overview",
+        "url": "https://my.mlc.health/en/site/newsinfo/2197",
+        "kind": "market",
+    },
+    {
+        "title": "CGM Fly competitive edge",
+        "url": "https://my.mlc.health/en/site/newsinfo/2699",
+        "kind": "product",
+    },
+    {
+        "title": "CGM market growth prospects for investors",
+        "url": "https://my.mlc.health/en/site/newsinfo/2692",
+        "kind": "market",
+    },
+    {
+        "title": "What MLC investors earn income from",
+        "url": "https://my.mlc.health/en/site/newsinfo/2614",
+        "kind": "business",
+    },
+    {
         "title": "MLC Project 2025 Results",
         "url": "https://my.mlc.health/en/site/newsinfo/3031",
         "kind": "news",
@@ -59,35 +89,63 @@ WEB_SOURCES = [
 
 SEED_DOCUMENTS = [
     {
-        "title": "Flystat official product highlights",
+        "title": "CGM Flystat official product highlights",
         "kind": "product",
         "source": "https://flystat.com/en",
         "content": (
-            "Flystat is presented as a continuous glucose monitoring system. The official site says "
-            "the sensor records glucose changes every 5 minutes in real time, works for 15 days, "
+            "CGM Flystat is presented as a continuous glucose monitoring system. The official site says "
+            "the sensor records glucose changes every 5 minutes in real time, works for up to 15 days, "
             "supports alerts, app-based monitoring, smartwatch sync, family monitoring for up to 4 "
             "relatives, and an AI virtual assistant."
         ),
     },
     {
-        "title": "MLC official investment overview",
+        "title": "MLC company and ownership positioning",
         "kind": "business",
-        "source": "https://mlc.health/",
+        "source": "https://mlc.health/ and https://my.mlc.health/en/site/project-info?f=1",
         "content": (
-            "MLC presents itself as an international technological platform focused on innovative "
-            "health diagnostics systems. The official site describes contract manufacturing in China, "
-            "in-house CGM technology, patents, production plans, and investment participation through "
-            "the MLC platform."
+            "MLC presents itself as an international technological company and engineering project focused on innovative "
+            "health diagnostic systems. MLC says it is developing its own CGM technology, building manufacturing capacity, "
+            "holding patents, and offering investors the opportunity to fund development and become co-owners of the technology project."
         ),
     },
     {
-        "title": "MLC official market claims",
+        "title": "Ivan Saltanov role",
         "kind": "business",
-        "source": "https://mlc.health/",
+        "source": "https://my.mlc.health/en/site/project-info?f=1 and https://my.mlc.health/en/site/newsinfo/2704",
         "content": (
-            "The MLC site states that the diabetes treatment industry exceeds 75 billion dollars, "
-            "that the CGM segment is growing, and that MLC positions its project as a way to "
-            "participate in scaling production of its CGM system."
+            "Ivan Saltanov is described in official MLC materials as Founder and CEO of MLC. "
+            "He is presented as the founder of the project and a key spokesperson for the investment and product strategy."
+        ),
+    },
+    {
+        "title": "Global diabetes burden from IDF 2025",
+        "kind": "market",
+        "source": "https://idf.org/about-diabetes/diabetes-facts-figures/?locale=en",
+        "content": (
+            "The International Diabetes Federation says about 589 million adults aged 20 to 79 were living with diabetes in 2024, "
+            "which is about 1 in 9 adults. The IDF projects about 853 million adults with diabetes by 2050. "
+            "Over 4 in 5 adults with diabetes live in low- and middle-income countries."
+        ),
+    },
+    {
+        "title": "MLC and CGM market demand claims",
+        "kind": "market",
+        "source": "https://my.mlc.health/en/site/newsinfo/2197 and https://my.mlc.health/en/site/newsinfo/3049",
+        "content": (
+            "MLC news materials describe the global CGM market as growing and say one company advantage is participation in a structurally "
+            "expanding market. One MLC market article states the CGM market was estimated at 3.6 billion dollars in 2020 with a projected "
+            "12.1 percent compound annual growth rate from 2021 to 2028. MLC's 2026 investment article also says the project's intellectual "
+            "property portfolio includes 17 patents valued at over 108 million dollars."
+        ),
+    },
+    {
+        "title": "Health Magazine article link",
+        "kind": "article",
+        "source": "https://healthmagazine.ae/press_release/19320/fly/",
+        "content": (
+            "There is a Health Magazine page related to Fly. If the user asks for outside media coverage or press references, "
+            "you can share the Health Magazine article link directly."
         ),
     },
     {
@@ -131,11 +189,11 @@ def read_pdf_text(path: Path) -> str:
 
 def classify_query(query: str) -> str:
     normalized = query.lower()
-    if any(word in normalized for word in {"latest", "news", "update", "updates", "recent", "expo"}):
+    if any(word in normalized for word in {"latest", "news", "update", "updates", "recent", "expo", "article", "press", "media"}):
         return "news"
-    if any(word in normalized for word in {"invest", "investment", "income", "profit", "business", "partner", "shares"}):
+    if any(word in normalized for word in {"invest", "investment", "income", "profit", "business", "partner", "shares", "ceo", "founder", "company", "owner", "co-owner"}):
         return "business"
-    if any(word in normalized for word in {"flystat", "cgm", "glucose", "sensor", "product", "device"}):
+    if any(word in normalized for word in {"flystat", "cgm", "glucose", "sensor", "product", "device", "diabetes", "market"}):
         return "product"
     return "general"
 
@@ -293,3 +351,46 @@ def merge_sales_cta(reply: str, user_text: str) -> str:
         return reply
 
     return f"{reply}\n\n" + "\n\n".join(additions)
+
+
+def detect_resource_needs(user_text: str) -> dict:
+    normalized = user_text.lower()
+    return {
+        "wants_presentation": any(term in normalized for term in {"presentation", "pdf", "brochure", "product pdf"}),
+        "wants_marketing": any(term in normalized for term in {"marketing plan", "comp plan", "business plan", "partner plan"}),
+        "wants_article": any(term in normalized for term in {"article", "press", "media", "magazine", "news link"}),
+        "serious_investor": any(
+            term in normalized
+            for term in {
+                "invest",
+                "investment",
+                "register",
+                "join",
+                "buy",
+                "co-owner",
+                "shares",
+                "price",
+                "how do i start",
+                "how to start",
+            }
+        ),
+    }
+
+
+def build_followup_memory(user: dict, user_text: str) -> str:
+    sent = user.get("sent_items", {})
+    needs = detect_resource_needs(user_text)
+    messages: list[str] = []
+
+    if needs["wants_presentation"] and sent.get("presentation"):
+        messages.append("You already have the CGM Flystat presentation above, so let me build on that instead of resending it.")
+    if needs["wants_marketing"] and sent.get("marketing"):
+        messages.append("You already have the marketing plan, so I'll focus on the key investor points instead of sending the file again.")
+    if needs["wants_article"] and sent.get("article"):
+        messages.append("I already shared the Health Magazine article link, so I can connect it to your question directly.")
+    if needs["serious_investor"] and sent.get("referral_link"):
+        messages.append("You already have the registration link, so the next step is simply to complete registration if the investment case makes sense to you.")
+    if needs["serious_investor"] and sent.get("channel"):
+        messages.append("You also already have the investor channel link for ongoing updates and context.")
+
+    return " ".join(messages)

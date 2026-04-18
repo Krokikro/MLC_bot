@@ -21,6 +21,8 @@ from telegram.ext import (
 
 from knowledge import INVESTOR_CHANNEL
 from knowledge import REFERRAL_LINK
+from knowledge import build_followup_memory
+from knowledge import detect_resource_needs
 from knowledge import merge_sales_cta
 from knowledge import select_relevant_context
 
@@ -149,10 +151,11 @@ def normalize_text(text: str) -> str:
 
 def ensure_user(user_id: str) -> dict:
     if user_id not in users:
-        users[user_id] = {"step": "ask_name", "history": []}
+        users[user_id] = {"step": "ask_name", "history": [], "sent_items": {}}
 
     users[user_id].setdefault("history", [])
     users[user_id].setdefault("step", "ask_name")
+    users[user_id].setdefault("sent_items", {})
     return users[user_id]
 
 
@@ -253,6 +256,17 @@ def build_system_messages(user_name: str, topic: str) -> list[dict]:
     messages.append(
         {"role": "system", "content": topic_guidance.get(topic, topic_guidance["general"])}
     )
+    messages.append(
+        {
+            "role": "system",
+            "content": (
+                "Always refer to the product as CGM Flystat, not just Flystat. "
+                "When describing MLC, make it clear that MLC is the company developing and owning the technology, "
+                "and that the investment proposition is participation in that technology project as a co-owner according to company materials. "
+                "If the user mentions Ivan Saltanov, identify him as Founder and CEO of MLC according to official MLC materials."
+            ),
+        }
+    )
     return messages
 
 
@@ -276,7 +290,12 @@ async def send_file(update: Update, path: Path, caption: str) -> None:
         await update.message.reply_document(document=file, caption=caption)
 
 
-def generate_ai_reply(user_name: str, history: list[dict], message_text: str, topic: str) -> str:
+def mark_sent(user: dict, item: str) -> None:
+    sent = user.setdefault("sent_items", {})
+    sent[item] = True
+
+
+def generate_ai_reply(user: dict, user_name: str, history: list[dict], message_text: str, topic: str) -> str:
     if not openai_client:
         return (
             "AI replies are not configured yet. Add OPENAI_API_KEY and try again."
@@ -284,6 +303,7 @@ def generate_ai_reply(user_name: str, history: list[dict], message_text: str, to
 
     messages = build_system_messages(user_name, topic)
     knowledge_context = select_relevant_context(message_text)
+    followup_memory = build_followup_memory(user, message_text)
     messages.append(
         {
             "role": "system",
@@ -293,6 +313,13 @@ def generate_ai_reply(user_name: str, history: list[dict], message_text: str, to
             ),
         }
     )
+    if followup_memory:
+        messages.append(
+            {
+                "role": "system",
+                "content": f"Conversation memory about already shared materials: {followup_memory}",
+            }
+        )
     messages.extend(history[-HISTORY_LIMIT:])
     messages.append({"role": "user", "content": message_text})
 
@@ -360,28 +387,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     direct_reply = build_direct_reply(topic)
     if direct_reply:
+        if topic == "register":
+            mark_sent(user, "referral_link")
+            mark_sent(user, "channel")
         await update.message.reply_text(direct_reply)
+        save_data(users)
         return
 
     if has_trigger(text, PRESENTATION_TRIGGERS):
-        await send_file(update, FLYSTAT_FILE, "Flystat presentation")
-        await update.message.reply_text(
-            "Here’s the presentation. If you want, I can also break down what Flystat does and why the project may be attractive from an investor perspective."
-        )
+        if user.get("sent_items", {}).get("presentation"):
+            await update.message.reply_text(
+                "You already have the CGM Flystat presentation above, so let me build on it instead of sending the same PDF again."
+            )
+        else:
+            await send_file(update, FLYSTAT_FILE, "CGM Flystat presentation")
+            mark_sent(user, "presentation")
+            await update.message.reply_text(
+                "Here’s the CGM Flystat presentation. If you want, I can also break down what the product does and why the project may be attractive from an investor perspective."
+            )
+        save_data(users)
         return
 
     if has_trigger(text, MARKETING_TRIGGERS):
-        await send_file(update, MARKETING_FILE, "Marketing plan")
-        await update.message.reply_text(
-            "Here’s the marketing plan. If you want, I can also walk you through the business side in plain English."
-        )
+        if user.get("sent_items", {}).get("marketing"):
+            await update.message.reply_text(
+                "You already have the marketing plan, so let me focus on the investor logic and key numbers instead of sending the same file again."
+            )
+        else:
+            await send_file(update, MARKETING_FILE, "Marketing plan")
+            mark_sent(user, "marketing")
+            await update.message.reply_text(
+                "Here’s the marketing plan. If you want, I can also walk you through the business side in plain English."
+            )
+        save_data(users)
         return
 
     user_name = user.get("name", "")
     history = user.get("history", [])
 
     try:
-        reply = generate_ai_reply(user_name, history, text, topic)
+        reply = generate_ai_reply(user, user_name, history, text, topic)
     except AuthenticationError:
         await update.message.reply_text(
             "OpenAI authentication failed. Check OPENAI_API_KEY in Railway Variables."
@@ -404,6 +449,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     reply = merge_sales_cta(reply, text)
+    needs = detect_resource_needs(text)
+    if needs["wants_article"] and not user.get("sent_items", {}).get("article"):
+        reply = (
+            f"{reply}\n\nHere is the Health Magazine article link as an outside media reference: "
+            "https://healthmagazine.ae/press_release/19320/fly/"
+        )
+        mark_sent(user, "article")
+    if REFERRAL_LINK in reply:
+        mark_sent(user, "referral_link")
+    if INVESTOR_CHANNEL in reply:
+        mark_sent(user, "channel")
 
     update_history(user, text, reply)
     user["step"] = "chat"
