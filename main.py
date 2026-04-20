@@ -111,6 +111,27 @@ CONVERSATION_END_TRIGGERS = {
     "lets stop here",
     "finish",
     "done",
+    "нет",
+    "неа",
+    "не надо",
+    "не нужно",
+    "не интересно",
+    "не сейчас",
+    "может позже",
+    "ничего не надо",
+    "ничего больше не надо",
+    "ничего больше",
+    "больше ничего",
+    "всё",
+    "все",
+    "это всё",
+    "это все",
+    "хватит",
+    "достаточно",
+    "спасибо, не надо",
+    "нет, спасибо",
+    "до свидания",
+    "пока",
 }
 REGISTER_TRIGGERS = {"register", "registration", "sign up", "signup", "join", "website", "link"}
 DISTRIBUTOR_TRIGGERS = {"distributor", "distribution", "preorder", "pre-order", "wholesale", "dealer", "contacts form"}
@@ -461,6 +482,24 @@ def is_conversation_end(text: str, user: dict) -> bool:
         "no thank you",
         "nothing else",
         "nothing more",
+        "нет",
+        "неа",
+        "не надо",
+        "не нужно",
+        "не интересно",
+        "не сейчас",
+        "может позже",
+        "ничего не надо",
+        "ничего больше",
+        "больше ничего",
+        "всё",
+        "все",
+        "это всё",
+        "это все",
+        "хватит",
+        "достаточно",
+        "спасибо, не надо",
+        "нет, спасибо",
     }
     unconditional_endings = {
         "bye",
@@ -469,8 +508,24 @@ def is_conversation_end(text: str, user: dict) -> bool:
         "talk later",
         "finish",
         "done",
+        "пока",
+        "до свидания",
+    }
+    strong_end_phrases = {
+        "ничего не надо",
+        "ничего больше не надо",
+        "больше ничего",
+        "всё понятно",
+        "все понятно",
+        "больше вопросов нет",
+        "вопросов нет",
+        "не надо больше",
+        "не нужно больше",
+        "спасибо, достаточно",
     }
     if normalized in unconditional_endings:
+        return True
+    if any(phrase in normalized for phrase in strong_end_phrases):
         return True
     if normalized in contextual_negative_matches:
         return assistant_invited_next_step(user)
