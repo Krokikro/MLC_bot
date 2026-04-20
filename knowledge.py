@@ -257,7 +257,34 @@ def classify_query(query: str) -> str:
     normalized = query.lower()
     if any(word in normalized for word in {"latest", "news", "update", "updates", "recent", "expo", "article", "press", "media"}):
         return "news"
-    if any(word in normalized for word in {"invest", "investment", "income", "profit", "business", "partner", "shares", "ceo", "founder", "company", "owner", "co-owner"}):
+    if any(
+        word in normalized
+        for word in {
+            "invest",
+            "investment",
+            "income",
+            "profit",
+            "business",
+            "partner",
+            "shares",
+            "ceo",
+            "founder",
+            "company",
+            "owner",
+            "co-owner",
+            "investor",
+            "commercialization",
+            "monetization",
+            "инвест",
+            "инвестор",
+            "доход",
+            "прибыль",
+            "монетиз",
+            "коммерциал",
+            "партнер",
+            "маркетинг",
+        }
+    ):
         return "business"
     if any(word in normalized for word in {"flystat", "cgm", "glucose", "sensor", "product", "device", "diabetes", "market"}):
         return "product"
@@ -461,6 +488,12 @@ def build_sales_cta(user_text: str) -> str:
         "income",
         "how do i start",
         "how to start",
+        "инвест",
+        "инвестор",
+        "инвести",
+        "как начать",
+        "как войти",
+        "как инвестировать",
     }
 
     if any(term in normalized for term in serious_terms):
@@ -469,7 +502,24 @@ def build_sales_cta(user_text: str) -> str:
             f"If you're seriously considering the investment side, also follow the investor channel: {INVESTOR_CHANNEL}"
         )
 
-    soft_terms = {"business", "partner", "marketing", "opportunity", "earning"}
+    soft_terms = {
+        "business",
+        "partner",
+        "marketing",
+        "opportunity",
+        "earning",
+        "monetization",
+        "commercialization",
+        "investor",
+        "бизнес",
+        "партнер",
+        "маркетинг",
+        "монетиз",
+        "коммерциал",
+        "инвестор",
+        "доход",
+        "заработ",
+    }
     if any(term in normalized for term in soft_terms):
         return f"If you want, I can also guide you to the investor registration page: {REFERRAL_LINK}"
 
@@ -498,12 +548,32 @@ def merge_sales_cta(reply: str, user_text: str) -> str:
 def detect_resource_needs(user_text: str) -> dict:
     normalized = user_text.lower()
     return {
-        "wants_presentation": any(term in normalized for term in {"presentation", "pdf", "brochure", "product pdf"}),
-        "wants_marketing": any(term in normalized for term in {"marketing plan", "comp plan", "business plan", "partner plan"}),
-        "wants_article": any(term in normalized for term in {"article", "press", "media", "magazine", "news link"}),
-        "wants_distribution": any(term in normalized for term in {"distributor", "distribution", "dealer", "wholesale"}),
-        "wants_preorder": any(term in normalized for term in {"preorder", "pre-order", "order device", "buy device", "contact form"}),
-        "wants_technical_help": any(term in normalized for term in {"technical", "specification", "accuracy", "sensor", "app", "battery", "compatibility"}),
+        "wants_presentation": any(term in normalized for term in {"presentation", "pdf", "brochure", "product pdf", "презентац", "презу", "пдф"}),
+        "wants_marketing": any(
+            term in normalized
+            for term in {
+                "marketing plan",
+                "comp plan",
+                "business plan",
+                "partner plan",
+                "commercialization",
+                "commercialisation",
+                "monetization",
+                "маркетинг",
+                "маркетинг план",
+                "коммерциал",
+                "комерциал",
+                "комерци",
+                "монетиз",
+                "партнерск",
+                "для инвестора",
+                "привлечение инвесторов",
+            }
+        ),
+        "wants_article": any(term in normalized for term in {"article", "press", "media", "magazine", "news link", "статья", "пресса", "медиа"}),
+        "wants_distribution": any(term in normalized for term in {"distributor", "distribution", "dealer", "wholesale", "дистриб", "опт"}),
+        "wants_preorder": any(term in normalized for term in {"preorder", "pre-order", "order device", "buy device", "contact form", "предзаказ", "заказать"}),
+        "wants_technical_help": any(term in normalized for term in {"technical", "specification", "accuracy", "sensor", "app", "battery", "compatibility", "техничес", "характерист", "сенсор", "точность"}),
         "serious_investor": any(
             term in normalized
             for term in {
@@ -517,6 +587,11 @@ def detect_resource_needs(user_text: str) -> dict:
                 "price",
                 "how do i start",
                 "how to start",
+                "инвест",
+                "инвестор",
+                "инвести",
+                "доля",
+                "как начать",
             }
         ),
     }

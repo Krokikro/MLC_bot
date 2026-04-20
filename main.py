@@ -62,8 +62,36 @@ MARKETING_TRIGGERS = {
     "investment file",
     "send marketing",
     "send me marketing",
+    "business plan",
+    "partner plan",
+    "commercialization",
+    "commercialisation",
+    "monetization",
+    "монетизация",
+    "монетиз",
+    "коммерциализация",
+    "комерциализация",
+    "комерцилизация",
+    "маркетинг план",
+    "маркетинг-план",
+    "маркетинг",
+    "маркетинг pdf",
+    "маркетинг пдф",
+    "план маркетинга",
+    "партнерский план",
+    "партнерская программа",
+    "компенсационный план",
 }
 CONVERSATION_END_TRIGGERS = {
+    "no",
+    "nope",
+    "nah",
+    "not now",
+    "maybe later",
+    "no thanks",
+    "no thank you",
+    "nothing else",
+    "nothing more",
     "no more questions",
     "no more question",
     "that is all",
@@ -75,6 +103,14 @@ CONVERSATION_END_TRIGGERS = {
     "thanks that is all",
     "thank you that is all",
     "no questions",
+    "bye",
+    "goodbye",
+    "see you",
+    "talk later",
+    "let's stop here",
+    "lets stop here",
+    "finish",
+    "done",
 }
 REGISTER_TRIGGERS = {"register", "registration", "sign up", "signup", "join", "website", "link"}
 DISTRIBUTOR_TRIGGERS = {"distributor", "distribution", "preorder", "pre-order", "wholesale", "dealer", "contacts form"}
@@ -107,6 +143,27 @@ BUSINESS_HINTS = {
     "commission",
     "referral",
     "marketing",
+    "monetization",
+    "commercialization",
+    "commercialisation",
+    "investor",
+    "business model",
+    "partner program",
+    "монетизация",
+    "коммерциализация",
+    "комерциализация",
+    "комерцилизация",
+    "инвестор",
+    "инвестора",
+    "инвесторов",
+    "доход",
+    "заработок",
+    "прибыль",
+    "партнерка",
+    "партнерский",
+    "реферальная программа",
+    "привлечение инвесторов",
+    "новых инвесторов",
 }
 GREETING_WORDS = {
     "hi",
@@ -117,10 +174,50 @@ GREETING_WORDS = {
     "good evening",
     "yo",
 }
+NAME_BLOCKLIST_WORDS = {
+    "send",
+    "marketing",
+    "plan",
+    "investment",
+    "investor",
+    "business",
+    "product",
+    "register",
+    "join",
+    "presentation",
+    "commercialization",
+    "commercialisation",
+    "monetization",
+    "hello",
+    "hi",
+    "hey",
+    "как",
+    "что",
+    "где",
+    "нужен",
+    "нужна",
+    "маркетинг",
+    "план",
+    "инвестор",
+    "инвестора",
+    "инвесторов",
+    "инвестиции",
+    "монетизация",
+    "коммерциализация",
+    "комерциализация",
+    "комерцилизация",
+    "презентация",
+    "регистрация",
+    "партнер",
+    "партнерский",
+    "проект",
+}
 NAME_PREFIX_PATTERNS = [
     re.compile(r"(?:^|[,\s])i am\s+([a-zA-Z][a-zA-Z\-']{1,29})(?:$|[.!?])", re.IGNORECASE),
     re.compile(r"(?:^|[,\s])i'm\s+([a-zA-Z][a-zA-Z\-']{1,29})(?:$|[.!?])", re.IGNORECASE),
     re.compile(r"(?:^|[,\s])my name is\s+([a-zA-Z][a-zA-Z\-']{1,29})(?:$|[.!?])", re.IGNORECASE),
+    re.compile(r"(?:^|[,\s])меня зовут\s+([a-zA-Zа-яА-ЯёЁ][a-zA-Zа-яА-ЯёЁ\-']{1,29})(?:$|[.!?])", re.IGNORECASE),
+    re.compile(r"(?:^|[,\s])я\s+([a-zA-Zа-яА-ЯёЁ][a-zA-Zа-яА-ЯёЁ\-']{1,29})(?:$|[.!?])", re.IGNORECASE),
 ]
 
 load_dotenv()
@@ -232,11 +329,13 @@ async def send_closing_resources(update: Update, user: dict) -> None:
         mark_sent(user, "marketing")
 
     resources = (
+        "Thanks for the conversation. I’m always here if new questions come up.\n\n"
         "Useful links:\n"
         f"- Investor registration: {REFERRAL_LINK}\n"
         f"- Investor channel: {INVESTOR_CHANNEL}\n"
         f"- Distributor/preorder form: {CONTACT_FORM}"
     )
+    remember_assistant_message(user, resources)
     await update.message.reply_text(resources)
 
 
@@ -250,6 +349,7 @@ def ensure_user(user_id: str) -> dict:
     users[user_id].setdefault("chat_id", None)
     users[user_id].setdefault("last_user_message_at", None)
     users[user_id].setdefault("followup_sent_at", None)
+    users[user_id].setdefault("last_assistant_message", "")
     return users[user_id]
 
 
@@ -258,8 +358,122 @@ def has_trigger(text: str, phrases: set[str]) -> bool:
     return any(phrase in normalized for phrase in phrases)
 
 
-def is_conversation_end(text: str) -> bool:
+def remember_assistant_message(user: dict, text: str) -> None:
+    user["last_assistant_message"] = text.strip()
+
+
+def wants_marketing_plan(text: str) -> bool:
     normalized = normalize_text(text)
+    if has_trigger(normalized, MARKETING_TRIGGERS):
+        return True
+
+    investor_terms = {
+        "investor",
+        "investors",
+        "investment",
+        "investments",
+        "инвестор",
+        "инвестора",
+        "инвесторов",
+        "инвестиции",
+        "инвестиций",
+    }
+    monetization_terms = {
+        "commercialization",
+        "commercialisation",
+        "monetization",
+        "monetisation",
+        "business model",
+        "partner program",
+        "partner plan",
+        "compensation",
+        "commission",
+        "referral",
+        "рефераль",
+        "монетиз",
+        "коммерциал",
+        "комерциал",
+        "комерци",
+        "партнерск",
+        "маркетинг",
+        "доход",
+        "заработ",
+        "прибыл",
+        "привлечен",
+        "новых инвесторов",
+    }
+
+    has_investor_context = any(term in normalized for term in investor_terms)
+    has_monetization_context = any(term in normalized for term in monetization_terms)
+    direct_business_request = any(
+        phrase in normalized
+        for phrase in {
+            "как зарабатывает инвестор",
+            "как инвестору заработать",
+            "инструмент монетизации",
+            "быстрая монетизация",
+            "быстрой монетизации",
+            "привлечение инвесторов",
+            "для инвестора",
+        }
+    )
+    return direct_business_request or (has_investor_context and has_monetization_context)
+
+
+def assistant_invited_next_step(user: dict) -> bool:
+    last_message = normalize_text(user.get("last_assistant_message", ""))
+    if not last_message:
+        return False
+
+    prompt_markers = {
+        "would you like",
+        "what would",
+        "what do you want",
+        "what would be more interesting",
+        "what is the main thing",
+        "what part",
+        "what technical detail",
+        "which option",
+        "contact form or the partners email",
+        "contact form or the partner email",
+        "the product or the investment side",
+        "what would you like to look at now",
+        "what would you like to know first",
+        "what would you like to assess first",
+        "what would you like to understand",
+        "what is still holding you back",
+        "if you want, i can also",
+        "if you'd like to move forward",
+        "what decision are you leaning toward",
+    }
+    return "?" in last_message[-180:] or any(marker in last_message for marker in prompt_markers)
+
+
+def is_conversation_end(text: str, user: dict) -> bool:
+    normalized = normalize_text(text)
+    contextual_negative_matches = {
+        "no",
+        "nope",
+        "nah",
+        "not now",
+        "maybe later",
+        "no thanks",
+        "no thank you",
+        "nothing else",
+        "nothing more",
+    }
+    unconditional_endings = {
+        "bye",
+        "goodbye",
+        "see you",
+        "talk later",
+        "finish",
+        "done",
+    }
+    if normalized in unconditional_endings:
+        return True
+    if normalized in contextual_negative_matches:
+        return assistant_invited_next_step(user)
     return any(phrase in normalized for phrase in CONVERSATION_END_TRIGGERS)
 
 
@@ -289,12 +503,21 @@ def looks_like_name(text: str) -> bool:
     if normalized in GREETING_WORDS:
         return False
 
+    if (
+        has_trigger(normalized, PRESENTATION_TRIGGERS | MARKETING_TRIGGERS | REGISTER_TRIGGERS | DISTRIBUTOR_TRIGGERS)
+        or any(phrase in normalized for phrase in BUSINESS_HINTS)
+        or normalized.startswith(("how ", "what ", "where ", "why ", "when ", "как ", "что ", "где ", "зачем "))
+    ):
+        return False
+
     words = [word for word in cleaned.replace(".", " ").split() if word]
     if len(words) == 0 or len(words) > 3:
         return False
 
     for word in words:
         if not word.replace("-", "").isalpha():
+            return False
+        if word.lower() in NAME_BLOCKLIST_WORDS:
             return False
 
     return True
@@ -322,8 +545,7 @@ def clean_stored_name(value: str | None) -> str | None:
     if extracted:
         return extracted
 
-    normalized = normalize_text(value)
-    if normalized in GREETING_WORDS or len(value.strip().split()) > 3:
+    if not looks_like_name(value):
         return None
 
     return value.strip().title()
@@ -480,30 +702,43 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = ensure_user(user_id)
     name = clean_stored_name(user.get("name"))
     user["name"] = name
-    user["step"] = "ask_name"
+    if not name:
+        user["step"] = "ask_name"
+    else:
+        user["step"] = "chat"
     user["history"] = []
+    user["chat_id"] = update.effective_chat.id
     save_data(users)
 
     if name:
-        await update.message.reply_text(
-            f"Welcome back, {name}.\nMLC is a health-tech company developing its own CGM Flystat continuous glucose monitoring system, and investors can participate in the growth of that technology project.\n\nWhat’s your name?"
+        welcome_text = (
+            f"Welcome back, {name}.\nMLC is a health-tech company developing its own CGM Flystat continuous glucose monitoring system, and investors can participate in the growth of that technology project.\n\nWhat would you like to look at now: the product side or the investment side?"
         )
+        remember_assistant_message(user, welcome_text)
+        await update.message.reply_text(welcome_text)
         return
 
-    await update.message.reply_text(
+    start_text = (
         "Hey. MLC is a health-tech company developing its own CGM Flystat continuous glucose monitoring system, and investors can participate in the growth of that technology project.\n\nWhat’s your name?"
     )
+    remember_assistant_message(user, start_text)
+    await update.message.reply_text(start_text)
 
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.effective_user.id)
-    users[user_id] = {"step": "ask_name", "history": [], "sent_items": {}, "chat_id": update.effective_chat.id, "last_user_message_at": None, "followup_sent_at": None}
+    users[user_id] = {"step": "ask_name", "history": [], "sent_items": {}, "chat_id": update.effective_chat.id, "last_user_message_at": None, "followup_sent_at": None, "last_assistant_message": ""}
     save_data(users)
-    await update.message.reply_text("State cleared. What’s your name?")
+    reset_text = "State cleared. What’s your name?"
+    remember_assistant_message(users[user_id], reset_text)
+    await update.message.reply_text(reset_text)
 
 
 async def version(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(f"Bot version: {APP_VERSION}")
+    version_text = f"Bot version: {APP_VERSION}"
+    user = ensure_user(str(update.effective_user.id))
+    remember_assistant_message(user, version_text)
+    await update.message.reply_text(version_text)
 
 
 async def followup_loop(application) -> None:
@@ -534,6 +769,7 @@ async def followup_loop(application) -> None:
             except Exception:
                 continue
 
+            remember_assistant_message(user, text)
             user["followup_sent_at"] = now
             dirty = True
 
@@ -554,14 +790,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
     user = ensure_user(user_id)
+    user["name"] = clean_stored_name(user.get("name"))
     user["chat_id"] = update.effective_chat.id
     user["last_user_message_at"] = int(time.time())
     user["followup_sent_at"] = None
     step = user.get("step", "ask_name")
     topic = detect_topic(text)
 
-    if is_conversation_end(text):
-        await update.message.reply_text("Understood. Glad I could help.")
+    if is_conversation_end(text, user):
+        closing_text = "Understood. Thanks for the conversation. If you want to come back to the product or investment side later, I’ll be here."
+        remember_assistant_message(user, closing_text)
+        await update.message.reply_text(closing_text)
         await send_closing_resources(update, user)
         save_data(users)
         return
@@ -572,15 +811,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             user["name"] = extracted_name
             user["step"] = "chat"
             save_data(users)
-            await update.message.reply_text(
-                f"Nice to meet you, {extracted_name}."
-            )
-            await update.message.reply_text(
-                f"Take a quick look at this short video about the MLC project:\n{VIDEO_LINK}"
-            )
-            await update.message.reply_text(
-                "What would be more interesting to you right now: the product or the investment side of the project?"
-            )
+            greeting_text = f"Nice to meet you, {extracted_name}."
+            video_text = f"Take a quick look at this short video about the MLC project:\n{VIDEO_LINK}"
+            next_step_text = "What would be more interesting to you right now: the product or the investment side of the project?"
+            await update.message.reply_text(greeting_text)
+            await update.message.reply_text(video_text)
+            remember_assistant_message(user, next_step_text)
+            await update.message.reply_text(next_step_text)
             return
 
         user["step"] = "chat"
@@ -594,43 +831,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             mark_sent(user, "referral_link")
             mark_sent(user, "channel")
         direct_reply = append_sales_question(normalize_branding(direct_reply), topic, text, user)
+        remember_assistant_message(user, direct_reply)
         await update.message.reply_text(direct_reply)
         save_data(users)
         return
 
     if has_trigger(text, PRESENTATION_TRIGGERS):
         if user.get("sent_items", {}).get("presentation"):
-            await update.message.reply_text(
-                append_sales_question(normalize_branding(
-                    "You already have the CGM Flystat presentation above, so let me build on it instead of sending the same PDF again."
-                ), topic, text, user)
-            )
+            presentation_text = append_sales_question(normalize_branding(
+                "You already have the CGM Flystat presentation above, so let me build on it instead of sending the same PDF again."
+            ), topic, text, user)
+            remember_assistant_message(user, presentation_text)
+            await update.message.reply_text(presentation_text)
         else:
             await send_file(update, FLYSTAT_FILE, "CGM Flystat presentation")
             mark_sent(user, "presentation")
-            await update.message.reply_text(
-                append_sales_question(normalize_branding(
-                    "Here’s the CGM Flystat presentation. If you want, I can also break down what the product does and why the project may be attractive from an investor perspective."
-                ), topic, text, user)
-            )
+            presentation_text = append_sales_question(normalize_branding(
+                "Here’s the CGM Flystat presentation. If you want, I can also break down what the product does and why the project may be attractive from an investor perspective."
+            ), topic, text, user)
+            remember_assistant_message(user, presentation_text)
+            await update.message.reply_text(presentation_text)
         save_data(users)
         return
 
-    if has_trigger(text, MARKETING_TRIGGERS):
+    if wants_marketing_plan(text):
         if user.get("sent_items", {}).get("marketing"):
-            await update.message.reply_text(
-                append_sales_question(normalize_branding(
-                    "You already have the marketing plan, so let me focus on the investor logic and key numbers instead of sending the same file again."
-                ), topic, text, user)
-            )
+            marketing_text = append_sales_question(normalize_branding(
+                "You already have the marketing plan, so let me focus on the investor logic and key numbers instead of sending the same file again."
+            ), topic, text, user)
+            remember_assistant_message(user, marketing_text)
+            await update.message.reply_text(marketing_text)
         else:
             await send_file(update, MARKETING_FILE, "Marketing plan")
             mark_sent(user, "marketing")
-            await update.message.reply_text(
-                append_sales_question(normalize_branding(
-                    "Here’s the marketing plan. If you want, I can also walk you through the business side in plain English."
-                ), topic, text, user)
-            )
+            marketing_text = append_sales_question(normalize_branding(
+                "Here’s the marketing plan. It is the most relevant file if you want to understand how the investor side is positioned, how the model is intended to monetize, and how partner-driven growth is presented in the project materials. If you want, I can also break down the key investor logic in plain English."
+            ), topic, text, user)
+            remember_assistant_message(user, marketing_text)
+            await update.message.reply_text(marketing_text)
         save_data(users)
         return
 
@@ -691,6 +929,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user["step"] = "chat"
     save_data(users)
 
+    remember_assistant_message(user, reply)
     await update.message.reply_text(reply)
 
 
